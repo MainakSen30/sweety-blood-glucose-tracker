@@ -3,17 +3,18 @@
 Sweety is a full-stack web application that will let a diabetes patient record up to four blood
 glucose readings per day and review daily and monthly reports.
 
-This repository currently contains **Phase 0: project foundation** only. It provides the monorepo,
-tooling, configuration, API health endpoint, PostgreSQL/Drizzle connectivity, tests, and Docker-based
-development environment. Application features, authentication, tables, and reports are intentionally
-not implemented yet.
+This repository contains **Phase 0: project foundation** and **Phase 1: authentication and user
+foundation**. It provides the monorepo, tooling, configuration, API health endpoint,
+PostgreSQL/Drizzle connectivity, Docker-based development environment, a `users` table, and a
+complete cookie-based JWT authentication flow (`register`, `login`, `me`, `logout`) with integration
+tests. Glucose readings, reports, charts, and doctor roles are intentionally not implemented yet.
 
 ## Tech stack
 
 | Area         | Technology                                                           |
 | ------------ | -------------------------------------------------------------------- |
 | Frontend     | React 19, TypeScript 5.9, Vite 8, React Router 7, Tailwind CSS 4     |
-| Backend      | Node.js 22, Express 5, TypeScript 5.9, Zod 4                         |
+| Backend      | Node.js 22, Express 5, TypeScript 5.9, Zod 4, bcryptjs, jsonwebtoken |
 | Database     | PostgreSQL 17 (Docker), Drizzle ORM 0.45, `pg`                       |
 | Testing      | Vitest 4, React Testing Library, Supertest, jsdom                    |
 | Code quality | ESLint 10 (flat config), Prettier 3, strict TypeScript               |
@@ -33,8 +34,8 @@ sweety/
 │   │   │   ├── components/          # Placeholder for future components
 │   │   │   ├── pages/               # HomePage placeholder
 │   │   │   ├── hooks/               # Placeholder for future hooks
-│   │   │   ├── services/            # Placeholder for future API clients
-│   │   │   ├── types/               # Placeholder for future client types
+│   │   │   ├── services/            # Typed API clients (authApi.ts, http.ts)
+│   │   │   ├── types/               # Client types (user.ts)
 │   │   │   ├── lib/                 # Placeholder for future utilities
 │   │   │   ├── App.tsx
 │   │   │   ├── App.test.tsx
@@ -52,13 +53,15 @@ sweety/
 │       │   ├── database/
 │       │   │   ├── index.ts
 │       │   │   └── schema.ts
-│       │   ├── middleware/          # Placeholder for future middleware
+│       │   ├── middleware/auth.ts   # JWT authentication middleware
 │       │   ├── modules/
+│       │   │   ├── auth/            # routes, controller, service, repository, validation, types, tokens, tests
 │       │   │   └── health/health.routes.ts
-│       │   ├── utils/               # Placeholder for future utilities
+│       │   ├── utils/               # errors.ts, validation.ts
 │       │   ├── app.ts
 │       │   ├── app.test.ts
 │       │   └── server.ts
+│       ├── tests/                   # Vitest setup (dedicated test database)
 │       ├── drizzle/                 # Generated migrations live here
 │       ├── Dockerfile
 │       ├── drizzle.config.ts
@@ -120,6 +123,9 @@ Then update the values for your machine. The example contains placeholders only.
 | `PORT`                  | Port used by the Express server when running locally                    | `5000`                  |
 | `CLIENT_URL`            | Allowed browser origin for CORS                                         | `http://localhost:5173` |
 | `DATABASE_URL`          | PostgreSQL connection string for local (non-Docker) development         | `postgresql://...`      |
+| `TEST_DATABASE_URL`     | Dedicated test database for Vitest. The name **must** end with `_test`  | `postgresql://...`      |
+| `JWT_SECRET`            | Secret used to sign JWTs. Required, minimum 32 characters               | —                       |
+| `JWT_EXPIRES_IN`        | JWT and cookie lifetime, in `s`/`m`/`h`/`d` units                       | `1h`                    |
 | `POSTGRES_DB`           | Database created by the Docker PostgreSQL service                       | `sweety`                |
 | `POSTGRES_USER`         | Database user created by the Docker PostgreSQL service                  | `sweety`                |
 | `POSTGRES_PASSWORD`     | Database password for Docker and local setup; change this placeholder   | `change_me`             |
@@ -131,10 +137,14 @@ Then update the values for your machine. The example contains placeholders only.
 Notes:
 
 - The server loads the root `.env` with `dotenv`. Variables injected by Docker Compose take precedence.
+- Generate `JWT_SECRET` with `openssl rand -base64 48`. Never commit a real secret; the server fails
+  fast at startup when `JWT_SECRET` is missing or shorter than 32 characters.
+- `TEST_DATABASE_URL` is only used by Vitest. The test runner refuses to run unless the database name
+  ends with `_test`, so destructive cleanup can never target the development database.
 - Vite's built-in env-file loading is disabled because the server's `NODE_ENV=development` in the
   shared root file would otherwise force development bundles during `vite build`. The Vite config
   reads only `VITE_API_PROXY_TARGET` from the root file for its dev proxy; Docker Compose injects that
-  value directly. No client runtime environment variables are needed in Phase 0.
+  value directly. No client runtime environment variables are needed.
 - `.env` and all `.env.*` files except `.env.example` are ignored by Git and excluded from Docker
   build contexts.
 - Keep `DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` consistent. Passwords
@@ -154,12 +164,17 @@ brew services start postgresql@18
 # Create a development role and database. Replace the placeholder password.
 psql -d postgres -c "CREATE ROLE sweety WITH LOGIN PASSWORD 'change_me';"
 createdb --owner=sweety sweety
+
+# Create a dedicated test role and database for Vitest.
+psql -d postgres -c "CREATE ROLE sweety_test WITH LOGIN PASSWORD 'change_me';"
+createdb --owner=sweety_test sweety_test
 ```
 
-If the role or database already exists, skip those commands. The default local connection string is:
+If a role or database already exists, skip its command. The default local connection strings are:
 
 ```text
-postgresql://sweety:change_me@localhost:5432/sweety
+postgresql://sweety:change_me@localhost:5432/sweety       # development
+postgresql://sweety_test:change_me@localhost:5432/sweety_test   # tests
 ```
 
 The API validates the environment with Zod at startup and exits with a readable message when required
@@ -266,7 +281,7 @@ npm run test --workspace @sweety/server
 
 ## API
 
-Phase 0 exposes one endpoint:
+### Health
 
 ```http
 GET /api/health
@@ -281,18 +296,154 @@ Successful response:
 }
 ```
 
+### Authentication
+
+| Method | Endpoint             | Auth required | Description                                  |
+| ------ | -------------------- | ------------- | -------------------------------------------- |
+| POST   | `/api/auth/register` | No            | Create an account and start a session        |
+| POST   | `/api/auth/login`    | No            | Authenticate and start a session             |
+| GET    | `/api/auth/me`       | Yes           | Return the authenticated user's safe profile |
+| POST   | `/api/auth/logout`   | No            | Clear the session cookie (idempotent)        |
+
+#### Register
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Demo User",
+  "email": "demo@example.com",
+  "password": "SecurePassword123"
+}
+```
+
+`201 Created` — returns a safe user (never a password hash) and sets the auth cookie:
+
+```json
+{
+  "id": "6f1c2b52-9f2f-4f1e-9f9a-1a2b3c4d5e6f",
+  "name": "Demo User",
+  "email": "demo@example.com",
+  "createdAt": "2026-11-12T00:00:00.000Z",
+  "updatedAt": "2026-11-12T00:00:00.000Z"
+}
+```
+
+Errors:
+
+- `400` with `details` listing per-field validation errors (name required, valid email, password of
+  at least 8 characters).
+- `409` when the email is already registered (case-insensitive): "An account with this email already
+  exists."
+
+#### Login
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "demo@example.com",
+  "password": "SecurePassword123"
+}
+```
+
+`200 OK` — same safe user shape as register, and sets the auth cookie.
+
+Errors: `401` with the generic message "Invalid email or password." for both a wrong password and a
+non-existent email, so account existence is never revealed.
+
+#### Current user
+
+```http
+GET /api/auth/me
+```
+
+Requires a valid auth cookie. `200 OK` returns the safe user; `401` returns
+"Authentication required." when the cookie is missing, invalid, or expired.
+
+#### Logout
+
+```http
+POST /api/auth/logout
+```
+
+`200 OK` clears the auth cookie with the same options used to set it. It is safe to call while
+already logged out.
+
 Unknown routes return a JSON `404` response. The Express application is exported from `app.ts` and is
 importable without starting a listener, which allows Supertest to exercise it directly. `server.ts`
 owns database startup checks, HTTP listening, and graceful shutdown on `SIGINT`/`SIGTERM`.
 
+## Authentication flow
+
+1. **Register or login.** The server validates input with Zod (email is trimmed and lowercased),
+   hashes passwords with `bcryptjs` (cost factor 12), and stores the user.
+2. **Token issuance.** On success the server signs a minimal JWT (HS256, subject = user ID) using
+   `JWT_SECRET` and sets it in the HTTP-only cookie `sweety_access_token`.
+3. **Authenticated requests.** The browser automatically sends the cookie. The `requireAuth`
+   middleware verifies the signature, expiration, and subject (it must be a UUID) and attaches
+   `authenticatedUserId` to the request. The server never trusts a user ID from the request body.
+4. **Current user.** `GET /api/auth/me` loads the user by the verified ID and returns the safe
+   profile.
+5. **Logout.** The server clears the cookie with matching options.
+
+### Cookie behavior
+
+The cookie `sweety_access_token` is set with:
+
+- `httpOnly: true` — not readable by JavaScript.
+- `sameSite: 'lax'` — sent on top-level navigations and same-site requests.
+- `secure: true` in production only (plain HTTP is allowed during local development).
+- `path: '/'` and a `maxAge` that always matches `JWT_EXPIRES_IN`, both when setting and clearing.
+
+The frontend never stores tokens in `localStorage` or `sessionStorage`. All API calls are same-origin
+relative `/api/...` requests (through the Vite dev proxy in development) with
+`credentials: 'include'`, and CORS on the server is configured with `credentials: true` for the
+allowed `CLIENT_URL`.
+
+### Security decisions and limitations
+
+- Passwords are hashed with bcrypt cost 12; plaintext passwords and password hashes are never
+  returned by any endpoint.
+- Login failures use a single generic message to avoid user enumeration.
+- Duplicate registrations return `409`, which does reveal that an email exists on the register
+  endpoint (an inherent trade-off of the UX requirement to tell users the email is taken).
+- JWTs carry only `sub` (the user ID) plus the standard claims; they are verified with the configured
+  algorithm and a UUID subject check.
+- **CSRF:** HTTP-only cookies mitigate XSS token theft but do **not** by themselves eliminate CSRF.
+  `SameSite=Lax` blocks most cross-site POST attacks from other origins, and the API currently
+  accepts only JSON bodies, which browsers cannot submit cross-site with a simple form. Still,
+  defenses such as a CSRF token, `Origin`/`Referer` checking, or `SameSite=Strict` should be
+  considered before exposing state-changing endpoints to other origins or relaxing the JSON-only
+  body requirement.
+- There is no refresh-token rotation or revocation list; a stolen cookie remains valid until
+  `JWT_EXPIRES_IN` elapses.
+
 ## Database and Drizzle
 
 - `apps/server/src/database/index.ts` creates the `pg` pool and Drizzle client.
-- `apps/server/src/database/schema.ts` is intentionally empty; no tables exist in Phase 0.
-- `apps/server/drizzle.config.ts` reads `DATABASE_URL` from the root `.env`.
-- Generated migrations belong in `apps/server/drizzle/`.
+- `apps/server/src/database/schema.ts` defines the `users` table:
 
-Typical workflow after the schema is defined:
+| Column          | Type                       | Constraints                         |
+| --------------- | -------------------------- | ----------------------------------- |
+| `id`            | `uuid`                     | Primary key, PostgreSQL-generated   |
+| `name`          | `varchar(120)`             | Not null                            |
+| `email`         | `varchar(255)`             | Not null, unique case-insensitively |
+| `password_hash` | `varchar(255)`             | Not null (bcrypt hash)              |
+| `created_at`    | `timestamp with time zone` | Not null, defaults to `now()`       |
+| `updated_at`    | `timestamp with time zone` | Not null, defaults to `now()`       |
+
+Case-insensitive uniqueness is enforced in the database with
+`CREATE UNIQUE INDEX users_email_unique_index ON users (lower(email))`, so `Demo@Example.com` and
+`demo@example.com` cannot both register. The schema is ready for a future `readings` table with a
+foreign key to `users`.
+
+- `apps/server/drizzle.config.ts` reads `DATABASE_URL` from the root `.env`.
+- Generated migrations belong in `apps/server/drizzle/` and are committed to the repository.
+
+Typical workflow after the schema is changed:
 
 ```bash
 npm run db:generate   # create SQL migration from schema.ts
@@ -301,8 +452,10 @@ npm run db:studio     # inspect data in Drizzle Studio
 ```
 
 `npm run db:push` is available for rapid development but should not replace reviewed migrations in
-shared environments. Running `db:generate` with the current empty schema reports no schema changes and
-creates no tables.
+shared environments.
+
+Vitest applies the committed migrations to `TEST_DATABASE_URL` in its global setup before any test
+runs, so the test database always matches the schema in the repository.
 
 To run Drizzle commands against the Docker database from the host, point `DATABASE_URL` at the mapped
 host port (`localhost:5433` if you changed `POSTGRES_PORT`) using the Compose credentials.
@@ -413,10 +566,33 @@ npm test
 npm run build
 ```
 
-The current tests cover the Express health endpoint with Supertest and the placeholder page with React
-Testing Library. There are no feature tests because no features are implemented in Phase 0.
+The current tests cover:
 
-## Phase 0 scope
+- The Express health endpoint with Supertest.
+- The placeholder page with React Testing Library.
+- The full authentication flow against the real HTTP app and the dedicated PostgreSQL test database:
+  registration (including password-hash verification in the database), case-insensitive duplicate
+  emails, validation errors, login (success, wrong password, non-existent email), `/me` with valid,
+  missing, invalid, and expired tokens, and logout cookie clearing.
+
+## Testing setup
+
+Backend tests require a dedicated PostgreSQL test database configured through `TEST_DATABASE_URL`.
+The database name must end with `_test`; the runner throws an error otherwise, so destructive test
+cleanup (`TRUNCATE TABLE users`) can never target the development database.
+
+```bash
+# Configure in .env, then run:
+npm test --workspace @sweety/server
+```
+
+Vitest's global setup applies the committed Drizzle migrations to the test database before tests run.
+Tests exercise the real Express application and database — they are not mocked at the HTTP or data
+layers.
+
+## Phase scope
+
+### Phase 0 (foundation)
 
 Included:
 
@@ -429,14 +605,23 @@ Included:
 - Docker Compose development environment with persistence and health checks
 - Documentation and code-quality tooling
 
+### Phase 1 (authentication and user foundation)
+
+Included:
+
+- `users` table with a case-insensitive unique email index and a committed Drizzle migration
+- Zod-validated registration, login, current-user, and logout endpoints
+- bcrypt password hashing (cost 12) and HS256 JWT signing
+- HTTP-only cookie token transport with `requireAuth` middleware
+- Typed frontend auth API client (`registerUser`, `loginUser`, `logoutUser`, `getCurrentUser`)
+- Integration tests against a dedicated `_test` database
+
 Intentionally not included:
 
-- Registration, login, JWT, passwords, or doctor roles
-- User or glucose-reading tables
-- Reading CRUD
-- Daily/monthly report calculations
-- Charts or dashboards
-- Redis, Kafka, background jobs, or Docker production deployment
+- Login/register UI screens (only the typed API client exists; the placeholder page is unchanged)
+- Glucose readings, reading CRUD, daily/monthly reports, charts, or dashboards
+- Doctor roles, reminders, or other Phase 2+ features
+- Redis, Kafka, background jobs, refresh-token rotation, or Docker production deployment
 - CI/CD pipelines
 
 Those belong to later phases.
@@ -453,6 +638,8 @@ Those belong to later phases.
 - Dockerfiles target development (Vite dev server and `tsx watch`), not a production web server/CDN setup.
 - The local `.env` on the development machine may use alternate host ports when system services already
   occupy `5000` or `5432`; these overrides do not change container-internal ports.
-- Vite's env-file loader is disabled to isolate client builds from the server's `NODE_ENV`. Phase 0
-  requires no client runtime environment variables; future client-specific `VITE_*` configuration can
-  use an app-scoped env file if needed.
+- Vite's env-file loader is disabled to isolate client builds from the server's `NODE_ENV`. No client
+  runtime environment variables are required; future client-specific `VITE_*` configuration can use
+  an app-scoped env file if needed.
+- Authentication cookies are only `secure` in production. Local development over plain HTTP is
+  intentional; a production deployment must serve the API over HTTPS.

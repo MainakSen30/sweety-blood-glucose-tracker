@@ -17,6 +17,11 @@ const envSchema = z.object({
       (value) => /^postgres(ql)?:\/\//.test(value),
       'DATABASE_URL must be a PostgreSQL connection string (postgres:// or postgresql://)',
     ),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters long'),
+  JWT_EXPIRES_IN: z
+    .string()
+    .regex(/^([1-9]\d*)([smhd])$/, 'JWT_EXPIRES_IN must use a format such as 30m, 1h, or 7d')
+    .default('1h'),
 });
 
 const parsedEnvironment = envSchema.safeParse(process.env);
