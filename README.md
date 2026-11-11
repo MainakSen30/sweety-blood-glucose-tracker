@@ -150,7 +150,9 @@ Notes:
 - Keep `DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` consistent. Passwords
   that contain URL-reserved characters must be URL-encoded when placed in `DATABASE_URL`.
 - Docker Compose interpolates `POSTGRES_*` values into the backend's `DATABASE_URL`, using the Compose
-  service hostname `postgres` and internal port `5432`.
+  service hostname `postgres` and internal port `5432`. It also passes `JWT_SECRET` and
+  `JWT_EXPIRES_IN` from the root `.env` into the server container; the server refuses to start when
+  `JWT_SECRET` is missing or too short.
 
 ### Local PostgreSQL setup
 

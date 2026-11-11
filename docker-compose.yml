@@ -30,6 +30,8 @@ services:
       PORT: 5000
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
       DATABASE_URL: postgresql://${POSTGRES_USER:-sweety}:${POSTGRES_PASSWORD:-sweety_dev_password}@postgres:5432/${POSTGRES_DB:-sweety}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
     ports:
       - '${SERVER_PORT:-5000}:5000'
     volumes:
