@@ -1,0 +1,35 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Version control
+.git
+.gitignore
+
+# Environment and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Build and test artifacts
+dist
+**/dist
+coverage
+**/coverage
+.vite
+**/.vite
+*.tsbuildinfo
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+.DS_Store
+tmp
+temp
+
+# Documentation and editor files not needed in images
+docs
+.vscode
+.idea
+README.md

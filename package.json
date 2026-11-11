@@ -1,0 +1,48 @@
+{
+  "name": "sweety-glucose-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sweety - Blood Glucose Tracker monorepo",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently --kill-others --names server,client --prefix-colors blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "npm run dev --workspace @sweety/client",
+    "dev:server": "npm run dev --workspace @sweety/server",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:watch": "npm run test:watch --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "npm run db:generate --workspace @sweety/server",
+    "db:migrate": "npm run db:migrate --workspace @sweety/server",
+    "db:push": "npm run db:push --workspace @sweety/server",
+    "db:studio": "npm run db:studio --workspace @sweety/server",
+    "docker:up": "docker compose up --build",
+    "docker:up:detached": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:ps": "docker compose ps"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "concurrently": "^10.0.7",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.2"
+  }
+}
