@@ -780,7 +780,7 @@ Included:
 - Typed frontend auth API client (`registerUser`, `loginUser`, `logoutUser`, `getCurrentUser`)
 - Integration tests against a dedicated `_test` database
 
-Phase 1 implementation notes:
+### Phase 1 implementation notes
 
 - **Token transport.** JWTs live only in the HTTP-only `sweety_access_token` cookie
   (`sameSite: 'lax'`, `secure` in production, `maxAge` always matching `JWT_EXPIRES_IN`). They are
