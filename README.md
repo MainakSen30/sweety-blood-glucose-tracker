@@ -827,13 +827,7 @@ Intentionally not included:
 
 Those belong to later phases.
 
-## Phase notes
-
-### Phase 1 notes
-
-See the "Phase 1 implementation notes" section under Phase scope above.
-
-### Phase 2 notes
+### Phase 2 implementation notes
 
 Phase 2 delivered the authenticated blood glucose readings CRUD (commit `fe4c183`):
 
