@@ -780,6 +780,30 @@ Included:
 - Typed frontend auth API client (`registerUser`, `loginUser`, `logoutUser`, `getCurrentUser`)
 - Integration tests against a dedicated `_test` database
 
+Phase 1 implementation notes:
+
+- **Token transport.** JWTs live only in the HTTP-only `sweety_access_token` cookie
+  (`sameSite: 'lax'`, `secure` in production, `maxAge` always matching `JWT_EXPIRES_IN`). They are
+  never returned in JSON bodies and never stored in web storage. Logout clears the cookie with the
+  same identity/security attributes minus `maxAge`.
+- **JWT shape.** HS256 only (signing and verification), payload limited to `sub` (user UUID),
+  verified with `JWT_SECRET` (Zod-enforced, ≥32 characters). The middleware rejects missing,
+  invalid, expired, or foreign-algorithm tokens with a single generic 401.
+- **Passwords.** bcrypt cost 12. Plaintext and hashes never appear in any API response.
+- **User enumeration.** Login returns one generic message for wrong password and unknown email.
+  Registration returns `409` for duplicates, which inherently reveals that an email exists.
+- **Rate limiting.** Register and login are limited per IP (default 20 requests / 15 minutes,
+  configurable via `AUTH_RATE_LIMIT_*`). Counters are in process memory — suitable for this
+  single-instance deployment, not for multi-instance production. The limiter is skipped while
+  `NODE_ENV=test` so integration tests stay deterministic; its 429 behavior is covered by dedicated
+  tests against the exported factory.
+- **Test safety.** Vitest requires `TEST_DATABASE_URL` whose database name ends with `_test`;
+  destructive cleanup refuses to run against anything else. Global setup applies the committed
+  migrations to the test database before any test runs.
+- **Known limitations.** No CSRF token (mitigated by `SameSite=Lax` and JSON-only bodies, still a
+  documented gap), no refresh-token rotation or revocation, and no login/register UI yet — only the
+  typed API client.
+
 ### Phase 2 (blood glucose readings)
 
 Included:
