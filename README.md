@@ -4,25 +4,28 @@ Sweety is a full-stack web application that will let a diabetes patient record u
 glucose readings per day and review daily and monthly reports.
 
 This repository contains **Phase 0: project foundation**, **Phase 1: authentication and user
-foundation**, and **Phase 2: blood glucose readings**. It provides the monorepo, tooling,
-configuration, Docker-based development environment, a `users` table, cookie-based JWT
-authentication (`register`, `login`, `me`, `logout`), and a complete authenticated CRUD API for
-blood glucose readings with integration tests. Reports, charts, dashboard UI, and doctor roles are
-intentionally not implemented yet.
+foundation**, **Phase 2: blood glucose readings**, and **Phase 3: report generation and analytics**.
+It provides the monorepo, tooling, configuration, Docker-based development environment, a `users`
+table, cookie-based JWT authentication (`register`, `login`, `me`, `logout`), a complete
+authenticated CRUD API for blood glucose readings, and daily / month-to-date / previous-month
+report endpoints backed by PostgreSQL aggregation — all with integration tests. Charts, a dashboard
+UI, and doctor roles are intentionally not implemented yet.
 
 ## Where to find what
 
-| Looking for…                                          | Section                                                                                                                                |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0 scope                                         | [Phase scope → Phase 0 (foundation)](#phase-scope)                                                                                     |
-| Phase 1 — what was built & implementation notes       | [Phase scope → Phase 1](#phase-1-authentication-and-user-foundation) and [Phase 1 implementation notes](#phase-1-implementation-notes) |
-| Phase 2 — what was built & implementation notes       | [Phase scope → Phase 2](#phase-2-blood-glucose-readings) and [Phase 2 implementation notes](#phase-2-implementation-notes)             |
-| API endpoints and payloads                            | [API](#api)                                                                                                                            |
-| Authentication flow, cookies, security, rate limiting | [Authentication flow](#authentication-flow)                                                                                            |
-| Database schema and migrations                        | [Database and Drizzle](#database-and-drizzle)                                                                                          |
-| Reading data model, slots, validation, timezone       | [Blood glucose readings](#blood-glucose-readings)                                                                                      |
-| Running, testing, Docker, ports                       | [Running locally](#running-locally), [Testing setup](#testing-setup), [Docker development](#docker-development)                        |
-| Assumptions and known limitations                     | [Assumptions](#assumptions), [Security decisions and limitations](#security-decisions-and-limitations)                                 |
+| Looking for…                                            | Section                                                                                                                                |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 scope                                           | [Phase scope → Phase 0 (foundation)](#phase-scope)                                                                                     |
+| Phase 1 — what was built & implementation notes         | [Phase scope → Phase 1](#phase-1-authentication-and-user-foundation) and [Phase 1 implementation notes](#phase-1-implementation-notes) |
+| Phase 2 — what was built & implementation notes         | [Phase scope → Phase 2](#phase-2-blood-glucose-readings) and [Phase 2 implementation notes](#phase-2-implementation-notes)             |
+| Phase 3 — what was built & implementation notes         | [Phase scope → Phase 3](#phase-3-report-generation-and-analytics) and [Phase 3 implementation notes](#phase-3-implementation-notes)    |
+| Report endpoints, empty behavior, rounding, date ranges | [Blood glucose reports](#blood-glucose-reports)                                                                                        |
+| API endpoints and payloads                              | [API](#api)                                                                                                                            |
+| Authentication flow, cookies, security, rate limiting   | [Authentication flow](#authentication-flow)                                                                                            |
+| Database schema and migrations                          | [Database and Drizzle](#database-and-drizzle)                                                                                          |
+| Reading data model, slots, validation, timezone         | [Blood glucose readings](#blood-glucose-readings)                                                                                      |
+| Running, testing, Docker, ports                         | [Running locally](#running-locally), [Testing setup](#testing-setup), [Docker development](#docker-development)                        |
+| Assumptions and known limitations                       | [Assumptions](#assumptions), [Security decisions and limitations](#security-decisions-and-limitations)                                 |
 
 ## Tech stack
 
@@ -523,6 +526,101 @@ it is never routed through a JavaScript timestamp, so no timezone can shift the 
 convention), so a reading entered after midnight UTC, for example, still belongs to the correct
 local day.
 
+### Blood glucose reports
+
+All report endpoints require the authentication cookie and always operate on the authenticated
+user's own readings — other users' data is excluded by the database query itself, never by
+post-filtering. All report dates in requests and responses are **DD-MM-YYYY**. The project's
+response convention is a bare JSON object (no `status: 'success'` wrapper).
+
+Every report summary has the same shape:
+
+```json
+{
+  "highest": 145,
+  "lowest": 95,
+  "average": 122.0,
+  "totalReadings": 4
+}
+```
+
+- `highest`/`lowest`/`average` are `null` (never `0`) when the period has no readings, so an empty
+  report cannot be mistaken for recorded measurements.
+- `average` is the mean of all **individual** readings in the period — never an average of daily
+  averages — rounded to exactly one decimal place (`121.44 → 121.4`, `121.46 → 121.5`) and returned
+  as a JSON number.
+- Aggregates for period reports are computed in PostgreSQL (`MAX`, `MIN`, `AVG`, `COUNT` through
+  Drizzle) over the `(user_id, reading_date)` index in a single query.
+
+#### Daily report
+
+```http
+GET /api/reports/daily?date=12-11-2026
+```
+
+Returns the day's readings in slot order (morning, after_breakfast, after_lunch, after_dinner) plus
+the summary. The `date` parameter is required and follows the same validation rules as readings:
+real calendar date, not in the future.
+
+```json
+{
+  "reportType": "daily",
+  "date": "12-11-2026",
+  "summary": { "highest": 145, "lowest": 95, "average": 122.0, "totalReadings": 4 },
+  "readings": [
+    { "id": "…", "readingDate": "12-11-2026", "slot": "morning", "value": 95 },
+    { "id": "…", "readingDate": "12-11-2026", "slot": "after_breakfast", "value": 145 },
+    { "id": "…", "readingDate": "12-11-2026", "slot": "after_lunch", "value": 130 },
+    { "id": "…", "readingDate": "12-11-2026", "slot": "after_dinner", "value": 118 }
+  ]
+}
+```
+
+An empty day returns `200` with `summary: { highest: null, lowest: null, average: null,
+totalReadings: 0 }` and `readings: []` — never a `404`.
+
+#### Month-to-date report
+
+```http
+GET /api/reports/month-to-date?date=12-11-2026
+```
+
+Aggregates from the first day of the selected month through the selected date, both boundaries
+inclusive. Readings after the selected date and readings from earlier months are excluded.
+
+```json
+{
+  "reportType": "month-to-date",
+  "period": { "startDate": "01-11-2026", "endDate": "12-11-2026" },
+  "summary": { "highest": 180, "lowest": 85, "average": 121.5, "totalReadings": 24 }
+}
+```
+
+#### Previous month report
+
+```http
+GET /api/reports/monthly
+```
+
+No query parameter. The period is the entire calendar month before the current date, determined in
+**Asia/Kolkata**. January correctly resolves to December of the previous year, and leap-year
+February (29 days) is handled by date arithmetic rather than hardcoded month lengths.
+
+```json
+{
+  "reportType": "monthly",
+  "period": { "startDate": "01-10-2026", "endDate": "31-10-2026" },
+  "summary": { "highest": 190, "lowest": 78, "average": 119.4, "totalReadings": 96 }
+}
+```
+
+#### Report errors
+
+- Missing, malformed, impossible, or future `date` → `400` with
+  `details: [{ "path": "date", "message": … }]`, using the same messages as the readings endpoints.
+- Missing, invalid, or expired cookie → `401 { "status": "error", "message": "Authentication
+required." }`.
+
 Unknown routes return a JSON `404` response. The Express application is exported from `app.ts` and is
 importable without starting a listener, which allows Supertest to exercise it directly. `server.ts`
 owns database startup checks, HTTP listening, and graceful shutdown on `SIGINT`/`SIGTERM`.
@@ -875,6 +973,65 @@ Phase 2 delivered the authenticated blood glucose readings CRUD (commit `fe4c183
   duplicate slots); readings queries are not paginated yet; deleting a user cascades their
   readings.
 
+### Phase 3 (report generation and analytics)
+
+Included:
+
+- `/api/reports/daily?date=…`, `/api/reports/month-to-date?date=…`, and `/api/reports/monthly`
+  endpoints, all behind the existing `requireAuth` middleware
+- Daily report with individual readings in slot order plus highest/lowest/average/count
+- Month-to-date and previous-month reports aggregated in PostgreSQL (`MAX`/`MIN`/`AVG`/`COUNT`
+  through Drizzle) over the `(user_id, reading_date)` index
+- Averages rounded to exactly one decimal place and returned as JSON numbers; `null` (not `0`)
+  aggregates for empty periods
+- Injectable pure date-range helpers (`monthToDateRange`, `previousMonthRange`) unit-tested against
+  reference dates, including January → previous-year December and leap-year February
+- Typed frontend API client (`reportsApi.ts`) and report types (`types/report.ts`) for the Phase 4
+  dashboard — no reporting UI yet
+- Integration tests for all three endpoints (authentication, validation, boundaries, known-value
+  aggregation, rounding, two-user isolation)
+
+Not included (deferred to Phase 4 or later): dashboard UI, charts, doctor accounts, exports,
+email/notifications, caching layers, scheduled reports.
+
+### Phase 3 implementation notes
+
+Phase 3 delivered the reporting module (routes → controller → service → repository → PostgreSQL,
+mirroring the readings module):
+
+- **Architecture.** `apps/server/src/modules/reports/` with `reports.routes.ts` (mounted at
+  `/api/reports`), `reports.controller.ts` (thin: validate query, call service, return JSON),
+  `reports.service.ts` (date-range resolution, empty handling, rounding, DTO conversion),
+  `reports.repository.ts` (single indexed SQL aggregate), and `reports.types.ts`. The daily report
+  reuses `listReadings` from the readings repository — one query already sorted by slot order — and
+  computes its summary from the same rows, so details and aggregates can never disagree.
+- **Date ranges.** `monthToDateRange(reference)` is first-of-month through the reference date; both
+  boundaries inclusive. `previousMonthRange(reference)` uses `Date.UTC` arithmetic — rolling
+  January back to December of the previous year and taking day 0 of the following month as the last
+  day — so no month length is hardcoded and leap years are correct. Both are pure functions of an
+  ISO reference date and are unit-tested with injected reference dates (`2026-01-15` → December
+  2025, `2024-03-10` → 29-day February). `/api/reports/monthly` resolves the reference with
+  `todayInAppTimezone()` (Asia/Kolkata); integration tests seed the previous month dynamically from
+  the same helper, so they do not depend on the machine's date.
+- **Aggregation.** Period reports run one query per report with SQL `MAX`, `MIN`, `AVG`, and
+  `COUNT(*)::int`, filtered by `user_id` and an inclusive date range — never fetch-and-filter in
+  JavaScript. PostgreSQL `AVG` over integers returns a numeric, which arrives as a string; it is
+  converted with `Number()` and rounded with `Math.round(value * 10) / 10`.
+- **Empty reports.** Every endpoint returns `200` with `null` aggregates and `totalReadings: 0`
+  (daily additionally returns `readings: []`). Zero is never used for highest/lowest/average, so an
+  empty report cannot imply a recorded measurement.
+- **Data format.** Report dates follow the project's DD-MM-YYYY API convention (the assignment
+  examples used YYYY-MM-DD; the response shape is a bare object without a `status: 'success'`
+  wrapper, matching the project's conventions).
+- **Validation reuse.** Reports import the same `dateOnlySchema` the readings endpoints use, so
+  date rules and messages are identical across modules.
+- **Isolation.** The user ID always comes from the verified JWT; both the daily listing and the SQL
+  aggregate filter by `user_id`. Two-user integration tests verify that foreign readings never
+  appear in any report.
+- **Known limitations.** No caching or materialized views (each report is one indexed query);
+  `/api/reports/monthly` has no parameter to request a specific month (previous month only, per
+  the assignment); averages are rounded for display — unrounded means are never persisted.
+
 ## Assumptions
 
 - npm is used instead of Bun because the Docker addendum explicitly required Node.js and npm.
@@ -892,7 +1049,8 @@ Phase 2 delivered the authenticated blood glucose readings CRUD (commit `fe4c183
   an app-scoped env file if needed.
 - Authentication cookies are only `secure` in production. Local development over plain HTTP is
   intentional; a production deployment must serve the API over HTTPS.
-- The application timezone is Asia/Kolkata: "today" for date-only logic (the future-date rule) is
-  computed with `Intl.DateTimeFormat` in that zone. Reading dates themselves are plain
-  `YYYY-MM-DD` strings and are never converted through timestamps. If the assignment's target
-  audience changes, `APP_TIMEZONE` in `apps/server/src/utils/date.ts` is the single place to adjust.
+- The application timezone is Asia/Kolkata: "today" for date-only logic (the future-date rule and
+  the previous-month report period) is computed with `Intl.DateTimeFormat` in that zone. Date values
+  are stored and compared as `YYYY-MM-DD` internally, while the API surface speaks DD-MM-YYYY; dates
+  are never converted through timestamps. If the assignment's target audience changes,
+  `APP_TIMEZONE` in `apps/server/src/utils/date.ts` is the single place to adjust.

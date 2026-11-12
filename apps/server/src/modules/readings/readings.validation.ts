@@ -10,8 +10,10 @@ const INVALID_DATE_MESSAGE = 'Please enter a valid date in DD-MM-YYYY format.';
  * not in the future. A single check keeps the messages unambiguous, and the
  * schema transforms the value to the internal YYYY-MM-DD form used everywhere
  * else (database, sorting, responses).
+ *
+ * Exported so other user-facing date inputs (e.g. reports) validate identically.
  */
-const dateOnlySchema = z
+export const dateOnlySchema = z
   .string({ error: INVALID_DATE_MESSAGE })
   .superRefine((value, ctx) => {
     const isoDate = parseDDMMYYYY(value);
