@@ -827,6 +827,43 @@ Intentionally not included:
 
 Those belong to later phases.
 
+## Phase notes
+
+### Phase 1 notes
+
+See the "Phase 1 implementation notes" section under Phase scope above.
+
+### Phase 2 notes
+
+Phase 2 delivered the authenticated blood glucose readings CRUD (commit `fe4c183`):
+
+- **Date-only semantics.** `readingDate` is a PostgreSQL `DATE` handled as a `YYYY-MM-DD` string
+  everywhere — schema, API, client types, and tests. No JavaScript timestamp conversion touches it,
+  so no timezone can shift the calendar day. Calendar validity (e.g. 2026-02-30 is rejected) is
+  verified with a UTC round-trip check, not `new Date(string)`.
+- **Timezone.** "Today" for the future-date rule is computed in **Asia/Kolkata** via
+  `Intl.DateTimeFormat`. `APP_TIMEZONE` in `apps/server/src/utils/date.ts` is the single place to
+  change it.
+- **Ownership.** The user ID always comes from the verified JWT (`authenticatedUserId`); request
+  bodies cannot set it. Every read, update, and delete filters by both reading id and user id, so
+  foreign readings are indistinguishable from missing ones (`404 Reading not found.`).
+- **Database-backed rules.** One reading per user/date/slot (unique index), 40–600 mg/dl (check
+  constraint plus Zod), at most four readings per day (service count check, message
+  `You can add only 4 readings per day.`). Unique violations map to friendly slot-label conflicts
+  such as `You already have a Morning (fasting) reading for this date.`; no raw database errors
+  leak.
+- **Listing.** Optional `date` (exclusive of `from`/`to`) or `from`/`to` range, no future dates,
+  sorted by `readingDate` descending then slot order (morning, after_breakfast, after_lunch,
+  after_dinner).
+- **Test isolation.** All suites share one `_test` database, so test files run sequentially
+  (`fileParallelism: false`) and cleanup truncates `users CASCADE`, which clears readings too.
+- **Assumption.** The assignment said "DD-MM-YYYY" in one sentence while every example and filter
+  used `YYYY-MM-DD`; `YYYY-MM-DD` was implemented and documented.
+- **Known limitations.** The daily-limit check is count-then-insert, so two simultaneous creates
+  for the same day could theoretically land a fifth reading (the unique index still prevents
+  duplicate slots); readings queries are not paginated yet; deleting a user cascades their
+  readings.
+
 ## Assumptions
 
 - npm is used instead of Bun because the Docker addendum explicitly required Node.js and npm.
