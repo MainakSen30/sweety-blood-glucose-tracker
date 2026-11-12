@@ -10,6 +10,20 @@ authentication (`register`, `login`, `me`, `logout`), and a complete authenticat
 blood glucose readings with integration tests. Reports, charts, dashboard UI, and doctor roles are
 intentionally not implemented yet.
 
+## Where to find what
+
+| Looking for…                                          | Section                                                                                                                                |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 scope                                         | [Phase scope → Phase 0 (foundation)](#phase-scope)                                                                                     |
+| Phase 1 — what was built & implementation notes       | [Phase scope → Phase 1](#phase-1-authentication-and-user-foundation) and [Phase 1 implementation notes](#phase-1-implementation-notes) |
+| Phase 2 — what was built & implementation notes       | [Phase scope → Phase 2](#phase-2-blood-glucose-readings) and [Phase 2 implementation notes](#phase-2-implementation-notes)             |
+| API endpoints and payloads                            | [API](#api)                                                                                                                            |
+| Authentication flow, cookies, security, rate limiting | [Authentication flow](#authentication-flow)                                                                                            |
+| Database schema and migrations                        | [Database and Drizzle](#database-and-drizzle)                                                                                          |
+| Reading data model, slots, validation, timezone       | [Blood glucose readings](#blood-glucose-readings)                                                                                      |
+| Running, testing, Docker, ports                       | [Running locally](#running-locally), [Testing setup](#testing-setup), [Docker development](#docker-development)                        |
+| Assumptions and known limitations                     | [Assumptions](#assumptions), [Security decisions and limitations](#security-decisions-and-limitations)                                 |
+
 ## Tech stack
 
 | Area         | Technology                                                           |
