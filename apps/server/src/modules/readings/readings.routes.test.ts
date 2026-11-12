@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import app from '../../app.js';
 import { closeTestPool, getTestPool, resetDatabase } from '../../../tests/database.js';
 import { tomorrowInAppTimezone } from '../../utils/date.js';
+import { toDDMMYYYY } from '../../utils/date.js';
 
 interface TestResponseHeaders {
   'set-cookie'?: string | string[];
@@ -35,10 +36,12 @@ async function registerTestUser(email: string): Promise<string> {
   return authCookieFrom(response);
 }
 
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_ONLY_PATTERN = /^\d{2}-\d{2}-\d{4}$/;
 
 // A fixed day in the past so creation tests never hit the future-date rule.
-const PAST_DATE = '2026-01-15';
+// The API speaks DD-MM-YYYY; the database stores YYYY-MM-DD.
+const PAST_DATE = '15-01-2026';
+const PAST_DATE_ISO = '2026-01-15';
 
 async function createReading(cookie: string, body: Record<string, unknown>) {
   return request(app).post('/api/readings').set('Cookie', cookie).send(body);
@@ -182,14 +185,14 @@ describe('POST /api/readings (create)', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.details).toEqual([
-      { path: 'readingDate', message: 'Please enter a valid date.' },
+      { path: 'readingDate', message: 'Please enter a valid date in DD-MM-YYYY format.' },
     ]);
   });
 
   it('rejects a date in the future with the exact message', async () => {
     const cookie = await registerTestUser('reader-a@example.com');
     const response = await createReading(cookie, {
-      readingDate: tomorrowInAppTimezone(),
+      readingDate: toDDMMYYYY(tomorrowInAppTimezone()),
       slot: 'morning',
       value: 105,
     });
@@ -242,13 +245,13 @@ describe('POST /api/readings (create)', () => {
     const cookie = await registerTestUser('reader-a@example.com');
     await createReading(cookie, { readingDate: PAST_DATE, slot: 'morning', value: 105 });
     const response = await createReading(cookie, {
-      readingDate: '2026-01-16',
+      readingDate: '16-01-2026',
       slot: 'morning',
       value: 110,
     });
 
     expect(response.status).toBe(201);
-    expect(response.body.readingDate).toBe('2026-01-16');
+    expect(response.body.readingDate).toBe('16-01-2026');
   });
 
   it('allows the same date and slot for two different users', async () => {
@@ -305,7 +308,7 @@ describe('POST /api/readings (create)', () => {
 
     // A new day is unaffected by the previous day's limit.
     const nextDay = await createReading(cookie, {
-      readingDate: '2026-01-16',
+      readingDate: '16-01-2026',
       slot: 'morning',
       value: 110,
     });
@@ -332,7 +335,7 @@ describe('GET /api/readings (list)', () => {
     const cookie = await registerTestUser('reader-a@example.com');
 
     await createReading(cookie, { readingDate: PAST_DATE, slot: 'morning', value: 100 });
-    await createReading(cookie, { readingDate: '2026-01-16', slot: 'morning', value: 110 });
+    await createReading(cookie, { readingDate: '16-01-2026', slot: 'morning', value: 110 });
 
     const response = await request(app)
       .get('/api/readings')
@@ -347,25 +350,25 @@ describe('GET /api/readings (list)', () => {
   it('filters by a from/to range', async () => {
     const cookie = await registerTestUser('reader-a@example.com');
 
-    await createReading(cookie, { readingDate: '2026-01-10', slot: 'morning', value: 100 });
-    await createReading(cookie, { readingDate: '2026-01-12', slot: 'morning', value: 110 });
-    await createReading(cookie, { readingDate: '2026-01-20', slot: 'morning', value: 120 });
+    await createReading(cookie, { readingDate: '10-01-2026', slot: 'morning', value: 100 });
+    await createReading(cookie, { readingDate: '12-01-2026', slot: 'morning', value: 110 });
+    await createReading(cookie, { readingDate: '20-01-2026', slot: 'morning', value: 120 });
 
     const response = await request(app)
       .get('/api/readings')
-      .query({ from: '2026-01-11', to: '2026-01-15' })
+      .query({ from: '11-01-2026', to: '15-01-2026' })
       .set('Cookie', cookie);
 
     expect(response.status).toBe(200);
     expect(response.body).toHaveLength(1);
-    expect(response.body[0].readingDate).toBe('2026-01-12');
+    expect(response.body[0].readingDate).toBe('12-01-2026');
   });
 
   it('rejects combining date with from', async () => {
     const cookie = await registerTestUser('reader-a@example.com');
     const response = await request(app)
       .get('/api/readings')
-      .query({ date: PAST_DATE, from: '2026-01-10' })
+      .query({ date: PAST_DATE, from: '10-01-2026' })
       .set('Cookie', cookie);
 
     expect(response.status).toBe(400);
@@ -378,7 +381,7 @@ describe('GET /api/readings (list)', () => {
     const cookie = await registerTestUser('reader-a@example.com');
     const response = await request(app)
       .get('/api/readings')
-      .query({ date: PAST_DATE, to: '2026-01-10' })
+      .query({ date: PAST_DATE, to: '10-01-2026' })
       .set('Cookie', cookie);
 
     expect(response.status).toBe(400);
@@ -391,7 +394,7 @@ describe('GET /api/readings (list)', () => {
     const cookie = await registerTestUser('reader-a@example.com');
     const response = await request(app)
       .get('/api/readings')
-      .query({ from: '2026-01-20', to: '2026-01-10' })
+      .query({ from: '20-01-2026', to: '10-01-2026' })
       .set('Cookie', cookie);
 
     expect(response.status).toBe(400);
@@ -409,7 +412,7 @@ describe('GET /api/readings (list)', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.details).toEqual([
-      { path: 'date', message: 'Please enter a valid date.' },
+      { path: 'date', message: 'Please enter a valid date in DD-MM-YYYY format.' },
     ]);
   });
 
@@ -417,7 +420,7 @@ describe('GET /api/readings (list)', () => {
     const cookie = await registerTestUser('reader-a@example.com');
     const response = await request(app)
       .get('/api/readings')
-      .query({ date: tomorrowInAppTimezone() })
+      .query({ date: toDDMMYYYY(tomorrowInAppTimezone()) })
       .set('Cookie', cookie);
 
     expect(response.status).toBe(400);
@@ -429,12 +432,12 @@ describe('GET /api/readings (list)', () => {
   it('sorts by readingDate descending then slot order', async () => {
     const cookie = await registerTestUser('reader-a@example.com');
 
-    await createReading(cookie, { readingDate: '2026-01-10', slot: 'morning', value: 100 });
-    await createReading(cookie, { readingDate: '2026-01-12', slot: 'after_dinner', value: 200 });
-    await createReading(cookie, { readingDate: '2026-01-12', slot: 'morning', value: 100 });
-    await createReading(cookie, { readingDate: '2026-01-12', slot: 'after_lunch', value: 170 });
+    await createReading(cookie, { readingDate: '10-01-2026', slot: 'morning', value: 100 });
+    await createReading(cookie, { readingDate: '12-01-2026', slot: 'after_dinner', value: 200 });
+    await createReading(cookie, { readingDate: '12-01-2026', slot: 'morning', value: 100 });
+    await createReading(cookie, { readingDate: '12-01-2026', slot: 'after_lunch', value: 170 });
     await createReading(cookie, {
-      readingDate: '2026-01-12',
+      readingDate: '12-01-2026',
       slot: 'after_breakfast',
       value: 130,
     });
@@ -443,11 +446,11 @@ describe('GET /api/readings (list)', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual([
-      expect.objectContaining({ readingDate: '2026-01-12', slot: 'morning' }),
-      expect.objectContaining({ readingDate: '2026-01-12', slot: 'after_breakfast' }),
-      expect.objectContaining({ readingDate: '2026-01-12', slot: 'after_lunch' }),
-      expect.objectContaining({ readingDate: '2026-01-12', slot: 'after_dinner' }),
-      expect.objectContaining({ readingDate: '2026-01-10', slot: 'morning' }),
+      expect.objectContaining({ readingDate: '12-01-2026', slot: 'morning' }),
+      expect.objectContaining({ readingDate: '12-01-2026', slot: 'after_breakfast' }),
+      expect.objectContaining({ readingDate: '12-01-2026', slot: 'after_lunch' }),
+      expect.objectContaining({ readingDate: '12-01-2026', slot: 'after_dinner' }),
+      expect.objectContaining({ readingDate: '10-01-2026', slot: 'morning' }),
     ]);
   });
 });
@@ -576,7 +579,7 @@ describe('PATCH /api/readings/:id (update)', () => {
     const response = await request(app)
       .patch(`/api/readings/${created.body.id}`)
       .set('Cookie', cookie)
-      .send({ readingDate: tomorrowInAppTimezone() });
+      .send({ readingDate: toDDMMYYYY(tomorrowInAppTimezone()) });
 
     expect(response.status).toBe(400);
     expect(response.body.details).toEqual([
@@ -706,7 +709,7 @@ describe('readings database constraints', () => {
       .query(
         `INSERT INTO readings (user_id, reading_date, slot, value)
        VALUES ($1, $2, 'morning', 999)`,
-        [userId, PAST_DATE],
+        [userId, PAST_DATE_ISO],
       )
       .catch((error: { code?: string }) => error.code);
 

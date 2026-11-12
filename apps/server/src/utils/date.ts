@@ -54,3 +54,41 @@ export function tomorrowInAppTimezone(): string {
 
   return tomorrow.toISOString().slice(0, 10);
 }
+
+const DMY_PATTERN = /^(\d{2})-(\d{2})-(\d{4})$/;
+
+/**
+ * Parses a DD-MM-YYYY string and returns the equivalent YYYY-MM-DD string, or
+ * null when the shape is wrong or the date does not exist on the calendar.
+ * Pure string arithmetic — no Date parsing of the input.
+ */
+export function parseDDMMYYYY(value: string): string | null {
+  const match = DMY_PATTERN.exec(value);
+
+  if (!match) {
+    return null;
+  }
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  const isoDate = date.toISOString().slice(0, 10);
+  return isValidCalendarDate(isoDate) ? isoDate : null;
+}
+
+/** Formats a YYYY-MM-DD string as DD-MM-YYYY. */
+export function toDDMMYYYY(value: string): string {
+  const [year, month, day] = value.split('-');
+
+  return `${day}-${month}-${year}`;
+}

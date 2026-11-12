@@ -4,8 +4,9 @@ export type ReadingSlot = 'morning' | 'after_breakfast' | 'after_lunch' | 'after
 /**
  * A blood glucose reading as returned by the API.
  *
- * `readingDate` is a date-only string (YYYY-MM-DD); the server never converts
- * it to a timestamp so calendar-day semantics survive the trip.
+ * `readingDate` is a date-only string in DD-MM-YYYY form. The server stores
+ * and sorts on YYYY-MM-DD internally and converts at the API boundary, so no
+ * timestamp or timezone conversion can shift the calendar day.
  */
 export interface Reading {
   id: string;

@@ -393,15 +393,15 @@ authenticated user's data; a user ID from the request body is never trusted.
 
 #### Reading data model
 
-| Column         | Type                       | Constraints                                                 |
-| -------------- | -------------------------- | ----------------------------------------------------------- |
-| `id`           | `uuid`                     | Primary key, PostgreSQL-generated                           |
-| `user_id`      | `uuid`                     | Foreign key to `users.id`, `ON DELETE CASCADE`              |
-| `reading_date` | `date` (date-only)         | Not null; always `YYYY-MM-DD` strings end to end            |
-| `slot`         | enum `reading_slot`        | `morning`, `after_breakfast`, `after_lunch`, `after_dinner` |
-| `value`        | `integer`                  | Not null; `CHECK (value BETWEEN 40 AND 600)` (mg/dl)        |
-| `created_at`   | `timestamp with time zone` | Not null, defaults to `now()`                               |
-| `updated_at`   | `timestamp with time zone` | Not null, defaults to `now()`                               |
+| Column         | Type                       | Constraints                                                          |
+| -------------- | -------------------------- | -------------------------------------------------------------------- |
+| `id`           | `uuid`                     | Primary key, PostgreSQL-generated                                    |
+| `user_id`      | `uuid`                     | Foreign key to `users.id`, `ON DELETE CASCADE`                       |
+| `reading_date` | `date` (date-only)         | Not null; stored as `YYYY-MM-DD` internally, API speaks `DD-MM-YYYY` |
+| `slot`         | enum `reading_slot`        | `morning`, `after_breakfast`, `after_lunch`, `after_dinner`          |
+| `value`        | `integer`                  | Not null; `CHECK (value BETWEEN 40 AND 600)` (mg/dl)                 |
+| `created_at`   | `timestamp with time zone` | Not null, defaults to `now()`                                        |
+| `updated_at`   | `timestamp with time zone` | Not null, defaults to `now()`                                        |
 
 Database constraints:
 
@@ -426,7 +426,7 @@ Content-Type: application/json
 Cookie: sweety_access_token=...
 
 {
-  "readingDate": "2026-11-12",
+  "readingDate": "12-11-2026",
   "slot": "morning",
   "value": 105
 }
@@ -438,7 +438,7 @@ Cookie: sweety_access_token=...
 {
   "id": "0f8d4c7a-4f3e-4d8a-9d3e-6e2a1b7c9d01",
   "userId": "6f1c2b52-9f2f-4f1e-9f9a-1a2b3c4d5e6f",
-  "readingDate": "2026-11-12",
+  "readingDate": "12-11-2026",
   "slot": "morning",
   "value": 105,
   "createdAt": "2026-11-12T10:30:00.000Z",
@@ -451,7 +451,7 @@ Validation errors return `400` with `details` of `{ path, message }` items. The 
 - `Please enter a glucose value.` — value missing or not a number.
 - `Value must be between 40 and 600 mg/dl.` — below 40, above 600, or not a whole number.
 - `Date cannot be in the future.` — the calendar date is after today.
-- `Please enter a valid date.` — not a real calendar date in `YYYY-MM-DD` format.
+- `Please enter a valid date in DD-MM-YYYY format.` — wrong shape or not a real calendar date.
 - `Slot must be one of morning, after_breakfast, after_lunch, or after_dinner.`
 
 Conflict errors return `409`:
@@ -464,8 +464,8 @@ Conflict errors return `409`:
 
 ```http
 GET /api/readings                     # all readings, newest first
-GET /api/readings?date=2026-11-12     # a single day
-GET /api/readings?from=2026-11-01&to=2026-11-10
+GET /api/readings?date=12-11-2026     # a single day
+GET /api/readings?from=01-11-2026&to=10-11-2026
 ```
 
 Rules:
@@ -501,9 +501,11 @@ foreign-owned readings return `404`.
 
 #### Date and timezone handling
 
-`readingDate` is a PostgreSQL `DATE` and is always transmitted and stored as a `YYYY-MM-DD`
-string. It is never converted through a JavaScript timestamp, so no timezone can shift the calendar
-day. "Today" for the future-date rule is determined in **Asia/Kolkata** (the assignment timezone
+The API speaks **DD-MM-YYYY**: request bodies and query filters accept it, and every response
+returns `readingDate` in that form. Internally the value is stored and compared as a PostgreSQL
+`DATE` (`YYYY-MM-DD`), converted deterministically at the API boundary with pure string arithmetic —
+it is never routed through a JavaScript timestamp, so no timezone can shift the calendar day.
+"Today" for the future-date rule is determined in **Asia/Kolkata** (the assignment timezone
 convention), so a reading entered after midnight UTC, for example, still belongs to the correct
 local day.
 
@@ -831,10 +833,11 @@ Those belong to later phases.
 
 Phase 2 delivered the authenticated blood glucose readings CRUD (commit `fe4c183`):
 
-- **Date-only semantics.** `readingDate` is a PostgreSQL `DATE` handled as a `YYYY-MM-DD` string
-  everywhere — schema, API, client types, and tests. No JavaScript timestamp conversion touches it,
-  so no timezone can shift the calendar day. Calendar validity (e.g. 2026-02-30 is rejected) is
-  verified with a UTC round-trip check, not `new Date(string)`.
+- **Date-only semantics.** `readingDate` is a PostgreSQL `DATE` stored and sorted as `YYYY-MM-DD`
+  internally, while the API accepts and returns **DD-MM-YYYY** (changed per product decision after
+  Phase 2; conversion is pure string arithmetic at the API boundary). No JavaScript timestamp
+  conversion touches it, so no timezone can shift the calendar day. Calendar validity (e.g.
+  30-02-2026 is rejected) is verified with a UTC round-trip check, not `new Date(string)`.
 - **Timezone.** "Today" for the future-date rule is computed in **Asia/Kolkata** via
   `Intl.DateTimeFormat`. `APP_TIMEZONE` in `apps/server/src/utils/date.ts` is the single place to
   change it.
@@ -851,8 +854,8 @@ Phase 2 delivered the authenticated blood glucose readings CRUD (commit `fe4c183
   after_dinner).
 - **Test isolation.** All suites share one `_test` database, so test files run sequentially
   (`fileParallelism: false`) and cleanup truncates `users CASCADE`, which clears readings too.
-- **Assumption.** The assignment said "DD-MM-YYYY" in one sentence while every example and filter
-  used `YYYY-MM-DD`; `YYYY-MM-DD` was implemented and documented.
+- **Date format.** The assignment's examples used `YYYY-MM-DD`; the product decision afterwards
+  switched the API surface to **DD-MM-YYYY** (storage stays `YYYY-MM-DD`).
 - **Known limitations.** The daily-limit check is count-then-insert, so two simultaneous creates
   for the same day could theoretically land a fifth reading (the unique index still prevents
   duplicate slots); readings queries are not paginated yet; deleting a user cascades their

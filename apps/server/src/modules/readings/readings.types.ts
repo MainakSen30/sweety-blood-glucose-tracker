@@ -1,4 +1,5 @@
 import type { READING_SLOTS, ReadingSlot as DatabaseReadingSlot } from '../../database/schema.js';
+import { toDDMMYYYY } from '../../utils/date.js';
 
 export type ReadingSlot = (typeof READING_SLOTS)[number];
 
@@ -19,8 +20,8 @@ export const SLOT_ORDER: Record<ReadingSlot, number> = {
 };
 
 /**
- * API shape of a reading. `readingDate` is a date-only string (YYYY-MM-DD),
- * never a timestamp.
+ * API shape of a reading. `readingDate` is a date-only string in DD-MM-YYYY
+ * form (the API format); the database stores YYYY-MM-DD internally.
  */
 export interface ReadingDto {
   id: string;
@@ -44,7 +45,7 @@ export function toReadingDto(reading: {
   return {
     id: reading.id,
     userId: reading.userId,
-    readingDate: reading.readingDate,
+    readingDate: toDDMMYYYY(reading.readingDate),
     slot: reading.slot,
     value: reading.value,
     createdAt: reading.createdAt,
