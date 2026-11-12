@@ -21,5 +21,8 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     globalSetup: ['./tests/global-setup.ts'],
+    // All suites share one PostgreSQL test database; running them in parallel
+    // would let one file's cleanup truncate another file's fixtures.
+    fileParallelism: false,
   },
 });

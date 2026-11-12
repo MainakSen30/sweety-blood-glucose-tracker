@@ -28,7 +28,18 @@ export function getTestPool(): Pool {
 }
 
 export async function resetUsersTable(): Promise<void> {
-  await getTestPool().query('TRUNCATE TABLE users');
+  // CASCADE also truncates tables that reference users (readings), so cleanup
+  // stays complete as user-scoped tables are added.
+  await getTestPool().query('TRUNCATE TABLE users CASCADE');
+}
+
+export async function resetReadingsTable(): Promise<void> {
+  await getTestPool().query('TRUNCATE TABLE readings');
+}
+
+export async function resetDatabase(): Promise<void> {
+  await resetReadingsTable();
+  await resetUsersTable();
 }
 
 export async function closeTestPool(): Promise<void> {

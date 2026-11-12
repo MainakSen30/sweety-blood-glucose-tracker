@@ -3,29 +3,9 @@ import { eq, sql } from 'drizzle-orm';
 import { db } from '../../database/index.js';
 import { users, type User } from '../../database/schema.js';
 import { HttpError } from '../../utils/errors.js';
+import { isUniqueViolationError } from '../../utils/database-errors.js';
 
 const BCRYPT_COST_FACTOR = 12;
-
-function isUniqueViolationError(error: unknown): boolean {
-  // Drizzle wraps driver errors in a DrizzleQueryError, so the PostgreSQL
-  // error code (23505 = unique_violation) may live on the cause.
-  const causes: unknown[] = [error];
-
-  let current: unknown = error;
-  while (typeof current === 'object' && current !== null && 'cause' in current) {
-    current = (current as { cause?: unknown }).cause;
-    if (current === null || current === undefined) break;
-    causes.push(current);
-  }
-
-  return causes.some(
-    (candidate) =>
-      typeof candidate === 'object' &&
-      candidate !== null &&
-      'code' in candidate &&
-      (candidate as { code?: unknown }).code === '23505',
-  );
-}
 
 export async function findUserByEmail(email: string): Promise<User | null> {
   const result = await db

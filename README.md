@@ -3,11 +3,12 @@
 Sweety is a full-stack web application that will let a diabetes patient record up to four blood
 glucose readings per day and review daily and monthly reports.
 
-This repository contains **Phase 0: project foundation** and **Phase 1: authentication and user
-foundation**. It provides the monorepo, tooling, configuration, API health endpoint,
-PostgreSQL/Drizzle connectivity, Docker-based development environment, a `users` table, and a
-complete cookie-based JWT authentication flow (`register`, `login`, `me`, `logout`) with integration
-tests. Glucose readings, reports, charts, and doctor roles are intentionally not implemented yet.
+This repository contains **Phase 0: project foundation**, **Phase 1: authentication and user
+foundation**, and **Phase 2: blood glucose readings**. It provides the monorepo, tooling,
+configuration, Docker-based development environment, a `users` table, cookie-based JWT
+authentication (`register`, `login`, `me`, `logout`), and a complete authenticated CRUD API for
+blood glucose readings with integration tests. Reports, charts, dashboard UI, and doctor roles are
+intentionally not implemented yet.
 
 ## Tech stack
 
@@ -34,8 +35,8 @@ sweety/
 │   │   │   ├── components/          # Placeholder for future components
 │   │   │   ├── pages/               # HomePage placeholder
 │   │   │   ├── hooks/               # Placeholder for future hooks
-│   │   │   ├── services/            # Typed API clients (authApi.ts, http.ts)
-│   │   │   ├── types/               # Client types (user.ts)
+│   │   │   ├── services/            # Typed API clients (authApi.ts, readingsApi.ts, http.ts)
+│   │   │   ├── types/               # Client types (user.ts, reading.ts)
 │   │   │   ├── lib/                 # Placeholder for future utilities
 │   │   │   ├── App.tsx
 │   │   │   ├── App.test.tsx
@@ -53,11 +54,12 @@ sweety/
 │       │   ├── database/
 │       │   │   ├── index.ts
 │       │   │   └── schema.ts
-│       │   ├── middleware/auth.ts   # JWT authentication middleware
+│       │   ├── middleware/          # auth.ts (JWT), rate-limit.ts
 │       │   ├── modules/
 │       │   │   ├── auth/            # routes, controller, service, repository, validation, types, tokens, tests
-│       │   │   └── health/health.routes.ts
-│       │   ├── utils/               # errors.ts, validation.ts
+│       │   │   ├── health/health.routes.ts
+│       │   │   └── readings/        # routes, controller, service, repository, validation, types, messages, tests
+│       │   ├── utils/               # errors.ts, validation.ts, date.ts, database-errors.ts
 │       │   ├── app.ts
 │       │   ├── app.test.ts
 │       │   └── server.ts
@@ -376,6 +378,135 @@ POST /api/auth/logout
 `200 OK` clears the auth cookie with the same options used to set it. It is safe to call while
 already logged out.
 
+### Blood glucose readings
+
+All reading endpoints require authentication (HTTP 401 otherwise) and always operate on the
+authenticated user's data; a user ID from the request body is never trusted.
+
+| Method | Endpoint            | Description                                         |
+| ------ | ------------------- | --------------------------------------------------- |
+| POST   | `/api/readings`     | Create a reading                                    |
+| GET    | `/api/readings`     | List the user's readings with optional date filters |
+| GET    | `/api/readings/:id` | Retrieve one of the user's readings                 |
+| PATCH  | `/api/readings/:id` | Update one of the user's readings                   |
+| DELETE | `/api/readings/:id` | Delete one of the user's readings                   |
+
+#### Reading data model
+
+| Column         | Type                       | Constraints                                                 |
+| -------------- | -------------------------- | ----------------------------------------------------------- |
+| `id`           | `uuid`                     | Primary key, PostgreSQL-generated                           |
+| `user_id`      | `uuid`                     | Foreign key to `users.id`, `ON DELETE CASCADE`              |
+| `reading_date` | `date` (date-only)         | Not null; always `YYYY-MM-DD` strings end to end            |
+| `slot`         | enum `reading_slot`        | `morning`, `after_breakfast`, `after_lunch`, `after_dinner` |
+| `value`        | `integer`                  | Not null; `CHECK (value BETWEEN 40 AND 600)` (mg/dl)        |
+| `created_at`   | `timestamp with time zone` | Not null, defaults to `now()`                               |
+| `updated_at`   | `timestamp with time zone` | Not null, defaults to `now()`                               |
+
+Database constraints:
+
+- Unique index on `(user_id, reading_date, slot)` — one reading per slot per day per user.
+- Regular index on `(user_id, reading_date)` for the daily/list queries.
+- Check constraint on the value range as a second line of defense behind Zod validation.
+
+#### Supported slots
+
+| Slot value        | Label used in messages |
+| ----------------- | ---------------------- |
+| `morning`         | Morning (fasting)      |
+| `after_breakfast` | After breakfast        |
+| `after_lunch`     | After lunch            |
+| `after_dinner`    | After dinner           |
+
+#### Create a reading
+
+```http
+POST /api/readings
+Content-Type: application/json
+Cookie: sweety_access_token=...
+
+{
+  "readingDate": "2026-11-12",
+  "slot": "morning",
+  "value": 105
+}
+```
+
+`201 Created` returns the reading:
+
+```json
+{
+  "id": "0f8d4c7a-4f3e-4d8a-9d3e-6e2a1b7c9d01",
+  "userId": "6f1c2b52-9f2f-4f1e-9f9a-1a2b3c4d5e6f",
+  "readingDate": "2026-11-12",
+  "slot": "morning",
+  "value": 105,
+  "createdAt": "2026-11-12T10:30:00.000Z",
+  "updatedAt": "2026-11-12T10:30:00.000Z"
+}
+```
+
+Validation errors return `400` with `details` of `{ path, message }` items. The fixed messages are:
+
+- `Please enter a glucose value.` — value missing or not a number.
+- `Value must be between 40 and 600 mg/dl.` — below 40, above 600, or not a whole number.
+- `Date cannot be in the future.` — the calendar date is after today.
+- `Please enter a valid date.` — not a real calendar date in `YYYY-MM-DD` format.
+- `Slot must be one of morning, after_breakfast, after_lunch, or after_dinner.`
+
+Conflict errors return `409`:
+
+- `You already have a Morning (fasting) reading for this date.` (or `an After breakfast reading`,
+  etc.) — duplicate slot for the same date.
+- `You can add only 4 readings per day.` — a fifth reading for the same day.
+
+#### List readings
+
+```http
+GET /api/readings                     # all readings, newest first
+GET /api/readings?date=2026-11-12     # a single day
+GET /api/readings?from=2026-11-01&to=2026-11-10
+```
+
+Rules:
+
+- `date` cannot be combined with `from` or `to` (400).
+- `from` must not be later than `to` (400).
+- All filter dates must be valid calendar dates and may not be in the future (400).
+- Results sort by `readingDate` descending, then slot order: morning, after_breakfast,
+  after_lunch, after_dinner.
+
+#### Update a reading
+
+```http
+PATCH /api/readings/:id
+Content-Type: application/json
+
+{ "value": 130 }
+```
+
+All fields are optional but at least one is required (`400` otherwise). The same validation rules
+as creation apply to updated fields, and a change that would collide with another slot on the same
+date returns `409`. Nonexistent or foreign-owned readings return `404` with
+`Reading not found.` — foreign data is never revealed.
+
+#### Delete a reading
+
+```http
+DELETE /api/readings/:id
+```
+
+`200 OK` with `{ "status": "ok", "message": "Reading deleted successfully." }`. Nonexistent or
+foreign-owned readings return `404`.
+
+#### Date and timezone handling
+
+`readingDate` is a PostgreSQL `DATE` and is always transmitted and stored as a `YYYY-MM-DD`
+string. It is never converted through a JavaScript timestamp, so no timezone can shift the calendar
+day. "Today" for the future-date rule is determined in **Asia/Kolkata** (the assignment timezone
+convention), so a reading entered after midnight UTC, for example, still belongs to the correct
+local day.
+
 Unknown routes return a JSON `404` response. The Express application is exported from `app.ts` and is
 importable without starting a listener, which allows Supertest to exercise it directly. `server.ts`
 owns database startup checks, HTTP listening, and graceful shutdown on `SIGINT`/`SIGTERM`.
@@ -598,6 +729,14 @@ The current tests cover:
   registration (including password-hash verification in the database), case-insensitive duplicate
   emails, validation errors, login (success, wrong password, non-existent email), `/me` with valid,
   missing, invalid, and expired tokens, and logout cookie clearing.
+- The blood glucose readings CRUD flow against the real HTTP app and test database: authentication
+  on every endpoint, creation validation (range, decimals, slots, calendar dates, future dates,
+  duplicates, daily limit), multi-user ownership, listing with date/range filters and sorting,
+  retrieval, updates (partial, conflicts, ownership), deletion, and the database check/cascade
+  constraints.
+
+Test files run sequentially (`fileParallelism: false`) because all suites share one PostgreSQL test
+database; parallel files would otherwise truncate each other's fixtures.
 
 ## Testing setup
 
@@ -641,13 +780,26 @@ Included:
 - Typed frontend auth API client (`registerUser`, `loginUser`, `logoutUser`, `getCurrentUser`)
 - Integration tests against a dedicated `_test` database
 
+### Phase 2 (blood glucose readings)
+
+Included:
+
+- `readings` table (date-only reading date, slot enum, value check constraint, unique per
+  user/date/slot, cascade delete) with a committed Drizzle migration
+- Authenticated CRUD endpoints for readings with ownership enforced on every query
+- Zod validation with friendly fixed messages, including date-only and Asia/Kolkata "today" logic
+- Typed frontend readings API client (`createReading`, `listReadings`, `getReading`,
+  `updateReading`, `deleteReading`)
+- Comprehensive integration tests for CRUD, ownership, filters, sorting, and constraints
+
 Intentionally not included:
 
-- Login/register UI screens (only the typed API client exists; the placeholder page is unchanged)
-- Glucose readings, reading CRUD, daily/monthly reports, charts, or dashboards
-- Doctor roles, reminders, or other Phase 2+ features
-- Redis, Kafka, background jobs, refresh-token rotation, or Docker production deployment
+- Login/register UI screens or dashboard/charts UI (only the typed API clients exist)
+- Daily/monthly reports or report calculations
+- Doctor roles, reminders, notifications
+- Redis, BullMQ, background jobs, refresh-token rotation, or Docker production deployment
 - CI/CD pipelines
+- Pagination (no existing convention requires it yet)
 
 Those belong to later phases.
 
@@ -668,3 +820,7 @@ Those belong to later phases.
   an app-scoped env file if needed.
 - Authentication cookies are only `secure` in production. Local development over plain HTTP is
   intentional; a production deployment must serve the API over HTTPS.
+- The application timezone is Asia/Kolkata: "today" for date-only logic (the future-date rule) is
+  computed with `Intl.DateTimeFormat` in that zone. Reading dates themselves are plain
+  `YYYY-MM-DD` strings and are never converted through timestamps. If the assignment's target
+  audience changes, `APP_TIMEZONE` in `apps/server/src/utils/date.ts` is the single place to adjust.
