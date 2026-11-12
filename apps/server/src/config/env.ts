@@ -22,6 +22,16 @@ const envSchema = z.object({
     .string()
     .regex(/^([1-9]\d*)([smhd])$/, 'JWT_EXPIRES_IN must use a format such as 30m, 1h, or 7d')
     .default('1h'),
+  AUTH_RATE_LIMIT_WINDOW_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000, 'AUTH_RATE_LIMIT_WINDOW_MS must be at least 1000 milliseconds')
+    .default(15 * 60 * 1000),
+  AUTH_RATE_LIMIT_MAX: z.coerce
+    .number()
+    .int()
+    .min(1, 'AUTH_RATE_LIMIT_MAX must be at least 1')
+    .default(20),
 });
 
 const parsedEnvironment = envSchema.safeParse(process.env);

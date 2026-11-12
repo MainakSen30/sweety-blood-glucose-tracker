@@ -117,22 +117,24 @@ cp .env.example .env
 
 Then update the values for your machine. The example contains placeholders only.
 
-| Variable                | Purpose                                                                 | Local default           |
-| ----------------------- | ----------------------------------------------------------------------- | ----------------------- |
-| `NODE_ENV`              | Runtime mode (`development`, `test`, or `production`)                   | `development`           |
-| `PORT`                  | Port used by the Express server when running locally                    | `5000`                  |
-| `CLIENT_URL`            | Allowed browser origin for CORS                                         | `http://localhost:5173` |
-| `DATABASE_URL`          | PostgreSQL connection string for local (non-Docker) development         | `postgresql://...`      |
-| `TEST_DATABASE_URL`     | Dedicated test database for Vitest. The name **must** end with `_test`  | `postgresql://...`      |
-| `JWT_SECRET`            | Secret used to sign JWTs. Required, minimum 32 characters               | —                       |
-| `JWT_EXPIRES_IN`        | JWT and cookie lifetime, in `s`/`m`/`h`/`d` units                       | `1h`                    |
-| `POSTGRES_DB`           | Database created by the Docker PostgreSQL service                       | `sweety`                |
-| `POSTGRES_USER`         | Database user created by the Docker PostgreSQL service                  | `sweety`                |
-| `POSTGRES_PASSWORD`     | Database password for Docker and local setup; change this placeholder   | `change_me`             |
-| `POSTGRES_PORT`         | Host port mapped to PostgreSQL's container port `5432`                  | `5432`                  |
-| `SERVER_PORT`           | Host port mapped to the API container's port `5000`                     | `5000`                  |
-| `CLIENT_PORT`           | Host port mapped to the Vite container's port `5173`                    | `5173`                  |
-| `VITE_API_PROXY_TARGET` | Local Vite proxy target. Compose overrides it with `http://server:5000` | `http://localhost:5000` |
+| Variable                    | Purpose                                                                 | Local default           |
+| --------------------------- | ----------------------------------------------------------------------- | ----------------------- |
+| `NODE_ENV`                  | Runtime mode (`development`, `test`, or `production`)                   | `development`           |
+| `PORT`                      | Port used by the Express server when running locally                    | `5000`                  |
+| `CLIENT_URL`                | Allowed browser origin for CORS                                         | `http://localhost:5173` |
+| `DATABASE_URL`              | PostgreSQL connection string for local (non-Docker) development         | `postgresql://...`      |
+| `TEST_DATABASE_URL`         | Dedicated test database for Vitest. The name **must** end with `_test`  | `postgresql://...`      |
+| `JWT_SECRET`                | Secret used to sign JWTs. Required, minimum 32 characters               | —                       |
+| `JWT_EXPIRES_IN`            | JWT and cookie lifetime, in `s`/`m`/`h`/`d` units                       | `1h`                    |
+| `AUTH_RATE_LIMIT_WINDOW_MS` | Rate-limit window for auth endpoints, in milliseconds                   | `900000` (15 minutes)   |
+| `AUTH_RATE_LIMIT_MAX`       | Max auth requests per IP within the rate-limit window                   | `20`                    |
+| `POSTGRES_DB`               | Database created by the Docker PostgreSQL service                       | `sweety`                |
+| `POSTGRES_USER`             | Database user created by the Docker PostgreSQL service                  | `sweety`                |
+| `POSTGRES_PASSWORD`         | Database password for Docker and local setup; change this placeholder   | `change_me`             |
+| `POSTGRES_PORT`             | Host port mapped to PostgreSQL's container port `5432`                  | `5432`                  |
+| `SERVER_PORT`               | Host port mapped to the API container's port `5000`                     | `5000`                  |
+| `CLIENT_PORT`               | Host port mapped to the Vite container's port `5173`                    | `5173`                  |
+| `VITE_API_PROXY_TARGET`     | Local Vite proxy target. Compose overrides it with `http://server:5000` | `http://localhost:5000` |
 
 Notes:
 
@@ -423,6 +425,26 @@ allowed `CLIENT_URL`.
 - There is no refresh-token rotation or revocation list; a stolen cookie remains valid until
   `JWT_EXPIRES_IN` elapses.
 
+### Rate limiting
+
+`POST /api/auth/register` and `POST /api/auth/login` are rate limited with `express-rate-limit`
+(per-IP). Defaults are **20 requests per 15 minutes**, configurable through `AUTH_RATE_LIMIT_MAX`
+and `AUTH_RATE_LIMIT_WINDOW_MS`. Exceeding the limit returns HTTP `429` with the standard error
+shape:
+
+```json
+{
+  "status": "error",
+  "message": "Too many requests. Please try again later."
+}
+```
+
+The limiter is applied only to these two endpoints — logout and `/me` are not throttled — and is
+disabled while `NODE_ENV=test` so the integration tests stay deterministic. It keeps counters in
+**process memory**, which is suitable for this single-instance deployment: limits are per instance
+and reset on restart. A multi-instance production deployment would need a shared store (for example
+Redis) for consistent limits, which is intentionally out of scope here.
+
 ## Database and Drizzle
 
 - `apps/server/src/database/index.ts` creates the `pg` pool and Drizzle client.
@@ -615,6 +637,7 @@ Included:
 - Zod-validated registration, login, current-user, and logout endpoints
 - bcrypt password hashing (cost 12) and HS256 JWT signing
 - HTTP-only cookie token transport with `requireAuth` middleware
+- In-memory rate limiting on register and login endpoints
 - Typed frontend auth API client (`registerUser`, `loginUser`, `logoutUser`, `getCurrentUser`)
 - Integration tests against a dedicated `_test` database
 

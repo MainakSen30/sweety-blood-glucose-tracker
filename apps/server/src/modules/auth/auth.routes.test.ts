@@ -217,6 +217,9 @@ describe('POST /api/auth/logout', () => {
     });
     expect(cookieHeaderFrom(response).join(';')).toContain(`${AUTH_COOKIE_NAME}=;`);
     expect(cookieHeaderFrom(response).join(';')).toContain('Expires=Thu, 01 Jan 1970 00:00:00');
+    expect(cookieHeaderFrom(response).join(';')).toContain('HttpOnly');
+    expect(cookieHeaderFrom(response).join(';')).toContain('SameSite=Lax');
+    expect(cookieHeaderFrom(response).join(';')).not.toContain('Max-Age');
   });
 
   it('succeeds without an authentication cookie', async () => {

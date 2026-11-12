@@ -25,10 +25,17 @@ interface ApiErrorBody {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const { headers, ...restInit } = init ?? {};
+
   const response = await fetch(path, {
+    // Sensible defaults first so caller-provided options always win.
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-    ...init,
+    ...restInit,
+    // Default JSON Content-Type, overridden only by explicit caller headers.
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
   });
 
   if (!response.ok) {

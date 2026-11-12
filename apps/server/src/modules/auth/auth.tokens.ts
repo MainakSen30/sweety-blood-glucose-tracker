@@ -59,10 +59,25 @@ export function authCookieOptions(): CookieOptions {
   };
 }
 
+/**
+ * Options used when clearing the cookie. These match the identity and security
+ * attributes of the cookie set by `authCookieOptions` (httpOnly, sameSite,
+ * secure, path) but deliberately omit maxAge: Express renders the expiry as
+ * `Expires=Thu, 01 Jan 1970`, and a maxAge value is not needed to delete.
+ */
+export function authCookieClearOptions(): CookieOptions {
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: env.NODE_ENV === 'production',
+    path: '/',
+  };
+}
+
 export function setAuthCookie(response: Response, token: string): void {
   response.cookie(AUTH_COOKIE_NAME, token, authCookieOptions());
 }
 
 export function clearAuthCookie(response: Response): void {
-  response.clearCookie(AUTH_COOKIE_NAME, authCookieOptions());
+  response.clearCookie(AUTH_COOKIE_NAME, authCookieClearOptions());
 }
