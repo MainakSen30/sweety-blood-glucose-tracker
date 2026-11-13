@@ -43,6 +43,23 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
     return;
   }
 
+  // body-parser (used by express.json()) throws a SyntaxError with a numeric
+  // `statusCode` and `type: 'entity.parse.failed'` when the request body is
+  // malformed JSON. These errors expose a client-supplied status code and
+  // should be returned as 400, not 500.
+  if (
+    error instanceof SyntaxError &&
+    'statusCode' in error &&
+    'type' in error &&
+    (error as SyntaxError & { type: string }).type === 'entity.parse.failed'
+  ) {
+    response.status(400).json({
+      status: 'error',
+      message: 'Invalid JSON in request body.',
+    });
+    return;
+  }
+
   console.error('Unhandled request error:', error);
   response.status(500).json({
     status: 'error',
