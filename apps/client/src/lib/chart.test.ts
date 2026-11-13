@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { slotCounts } from './chart.js';
+import { chronologicalReadings, slotCounts } from './chart.js';
 import type { ReadingSlot } from '../types/reading.js';
+
+describe('chronologicalReadings', () => {
+  it('orders DD-MM-YYYY dates chronologically, then by slot order', () => {
+    const readings = [
+      { id: 'd', readingDate: '02-01-2026', slot: 'after_dinner' as ReadingSlot },
+      { id: 'a', readingDate: '01-12-2025', slot: 'after_lunch' as ReadingSlot },
+      { id: 'c', readingDate: '02-01-2026', slot: 'morning' as ReadingSlot },
+      { id: 'b', readingDate: '15-12-2025', slot: 'morning' as ReadingSlot },
+    ];
+
+    expect(chronologicalReadings(readings).map((reading) => reading.id)).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+  });
+
+  it('keeps a stable order for identical dates and slots', () => {
+    const readings = [
+      { id: 'b', readingDate: '01-01-2026', slot: 'morning' as ReadingSlot },
+      { id: 'a', readingDate: '01-01-2026', slot: 'morning' as ReadingSlot },
+    ];
+
+    expect(chronologicalReadings(readings).map((reading) => reading.id)).toEqual(['a', 'b']);
+  });
+});
 
 describe('slotCounts', () => {
   it('counts each slot correctly', () => {

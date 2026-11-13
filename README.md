@@ -88,6 +88,8 @@ Main user workflows:
 - Aggregation computed in PostgreSQL (`MAX`, `MIN`, `AVG`, `COUNT`) — not fetched and filtered in
   JavaScript
 - Average rounded to one decimal place; `null` (never `0`) when a period has no readings
+- Chart data reuses the existing user-scoped readings endpoint with the report's own inclusive
+  period — no separate chart API and no duplicate aggregation
 
 ### Frontend
 
@@ -97,7 +99,9 @@ Main user workflows:
 - Readings history page with optional single-day filter, paginated controls, and a page-size
   selector (10 / 20 / 50)
 - Reading add/edit/delete dialogs with field-level validation messages
-- Reports page with daily, month-to-date, and previous-month tabs; bar charts; summary statistics
+- Reports page with daily, month-to-date, and previous-month tabs; summary statistics; a full-width
+  individual-reading glucose trend chart; a daily-average bar chart; and a time-slot donut chart
+- Charts are hand-drawn SVG/CSS components using the olive/sage palette — no charting dependency
 - Responsive layout (mobile-first, works on 320 px–1440 px+ viewports)
 - Cream and dark olive visual identity with accessible colour contrast
 - Motion animations (page entrance, dialog open/close, tab crossfade) with `prefers-reduced-motion`
@@ -105,7 +109,7 @@ Main user workflows:
 
 ### Testing
 
-- 249 passing tests across 18 test files (see CI output for current results)
+- 271 passing tests across 20 test files (see CI output for current results)
 - Server integration tests using Supertest against a real PostgreSQL test database
 - Client unit tests with Vitest and React Testing Library
 - TypeScript strict mode — zero type errors
@@ -117,18 +121,28 @@ Main user workflows:
 
 ## Screenshots
 
-Screenshots pending manual capture — see [docs/screenshots/README.md](docs/screenshots/README.md)
-for step-by-step capture instructions.
+Phase 8 report captures are included below. The remaining legacy screenshots use the same manual
+process described in [docs/screenshots/README.md](docs/screenshots/README.md).
 
-| File                                      | Page                         |
-| ----------------------------------------- | ---------------------------- |
-| `docs/screenshots/01-landing.png`         | Landing page                 |
-| `docs/screenshots/02-login.png`           | Login page                   |
-| `docs/screenshots/03-register.png`        | Registration page            |
-| `docs/screenshots/04-dashboard.png`       | Dashboard with demo readings |
-| `docs/screenshots/05-readings.png`        | Readings history page        |
-| `docs/screenshots/06-daily-report.png`    | Daily report with bar chart  |
-| `docs/screenshots/07-monthly-reports.png` | Monthly reports view         |
+| File                                          | Page                         |
+| --------------------------------------------- | ---------------------------- |
+| `docs/screenshots/01-landing.png`             | Landing page                 |
+| `docs/screenshots/02-login.png`               | Login page                   |
+| `docs/screenshots/03-register.png`            | Registration page            |
+| `docs/screenshots/04-dashboard.png`           | Dashboard with demo readings |
+| `docs/screenshots/05-readings.png`            | Readings history page        |
+| `docs/screenshots/06-daily-report.png`        | Daily report with bar chart  |
+| `docs/screenshots/07-monthly-reports.png`     | Monthly reports view         |
+| `docs/screenshots/phase8-reports-desktop.png` | Phase 8 reports at 1280 px   |
+| `docs/screenshots/phase8-reports-tablet.png`  | Phase 8 reports at 1024 px   |
+| `docs/screenshots/phase8-reports-mobile.png`  | Phase 8 reports at 390 px    |
+| `docs/screenshots/phase8-reports-daily.png`   | Phase 8 daily report view    |
+
+### Phase 8 — Reports dashboard
+
+![Reports dashboard on desktop](docs/screenshots/phase8-reports-desktop.png)
+
+![Reports dashboard on mobile](docs/screenshots/phase8-reports-mobile.png)
 
 ---
 
@@ -176,7 +190,7 @@ sweety/
 │   ├── client/
 │   │   ├── src/
 │   │   │   ├── components/
-│   │   │   │   ├── charts/          # ValueBars chart component
+│   │   │   │   ├── charts/          # Trend, bar, and donut chart components
 │   │   │   │   ├── layout/          # AppLayout, AuthLayout
 │   │   │   │   ├── readings/        # ReadingFormDialog, ReadingsList, DeleteReadingDialog
 │   │   │   │   ├── reports/         # ReportSummaryStats
@@ -731,6 +745,15 @@ No query parameter. Period is the full previous calendar month (determined in As
 }
 ```
 
+#### Chart data
+
+The Reports page draws individual readings from the existing endpoints rather than a dedicated
+chart API. The daily report already returns its readings; period reports expose the exact
+`period.startDate` / `period.endDate`, which the client passes to `GET /api/readings` as `from` /
+`to`. That endpoint is user-scoped, applies inclusive date boundaries, and returns every reading
+with its slot, so the trend and donut charts cannot include another user's data or fabricate
+observations. Slots are counted client-side from the same readings the trend line plots.
+
 ---
 
 ## Testing
@@ -773,6 +796,11 @@ runs, so the test schema always matches the repository.
   final/empty/beyond-last pages, per-user totals), update conflicts, deletion, cascade constraints
 - Reports: daily, month-to-date, previous-month — authentication, validation, known-value
   aggregation, rounding, two-user isolation
+- Report chart data: individual readings without aggregation, all four slots, inclusive period
+  boundaries, deterministic ordering, user scoping, and empty periods
+- Client report charts: trend points from real API data, same-day observations preserved, no trend
+  line for a single reading, donut counts/percentages, tab and date changes, empty/loading/error
+  states, and the existing daily-average bar chart
 - Client routing and redirects
 - Client date conversion utilities
 - Client readings pagination (controls, page changes, loading/error states, page-size reset,
@@ -827,6 +855,14 @@ Test counts: see CI output for current results.
   theoretically land a fifth reading (the unique slot index still prevents duplicates).
 - Authentication cookies are only `Secure` in production. Local development over plain HTTP is
   intentional and expected.
+- Report charts fetch the selected period through the paginated readings endpoint (100 per page).
+  At the four-readings-per-day limit a month is at most 124 readings, so this is at most two
+  requests; a dedicated chart endpoint was not needed.
+- The trend line joins consecutive recorded observations. Days without readings contribute no
+  point, but the line spans the gap between surrounding observations; it does not invent daily
+  values.
+- Chart tooltips appear on hover and keyboard focus. The donut legend states each slot's count and
+  percentage in text, so colour is not the only carrier of information.
 - The `GET /api/health` endpoint returns `200` after a successful database connection check at
   startup; it does not query the database on every request.
 - Doctor roles, reminders, notifications, and exports are intentionally out of scope.
@@ -912,6 +948,15 @@ User-scoped `page` / `limit` pagination on `GET /api/readings` with Zod-validate
 shared filter conditions for the data and count queries, deterministic ordering, structured
 `data` + `pagination` responses, and Previous/Next pagination controls with a page-size selector
 on the Readings page. Documented defaults, maximum limit, and beyond-last-page behaviour.
+
+### Phase 8 — Advanced reports and data visualization
+
+Full-width glucose trend line chart of individual readings (chronological, slot-ordered, with
+hover/keyboard tooltips) and a time-slot donut chart with counts and percentages, both driven by
+the selected Daily / Month-to-date / Previous-month period. The existing daily-average bar chart
+is preserved. Both new charts are hand-drawn SVG/CSS components — no charting dependency was
+added — with responsive stacking, labelled loading/empty/error states, and text equivalents for
+assistive technologies.
 
 ---
 

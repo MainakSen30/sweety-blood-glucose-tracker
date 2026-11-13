@@ -68,6 +68,15 @@ Before capturing:
 - State: logged in; switch to either the month-to-date or previous-month tab
 - Notes: show the summary statistics panel; if the chart is visible, include it
 
+### Phase 8 — Reports dashboard (captured)
+
+The Phase 8 chart captures are committed and use the same synthetic demo account:
+
+- `phase8-reports-desktop.png` — Month to date tab at 1280 px, showing the trend, bar, and donut charts
+- `phase8-reports-tablet.png` — Month to date tab at 1024 px
+- `phase8-reports-mobile.png` — Month to date tab at 390 px, charts stacked with no horizontal overflow
+- `phase8-reports-daily.png` — Daily tab showing the slot-based trend axis, bars, donut, and reading list
+
 ## Saving screenshots
 
 Save each file to this directory (`docs/screenshots/`) with the exact filenames listed above.

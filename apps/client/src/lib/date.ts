@@ -74,6 +74,22 @@ export function formatLongDate(apiDate: string): string {
   }).format(date);
 }
 
+/** Compact chart-axis form: "01 Nov". */
+export function formatShortDate(apiDate: string): string {
+  const match = DMY_PATTERN.exec(apiDate);
+
+  if (!match) {
+    return apiDate;
+  }
+
+  const date = new Date(`${match[3]}-${match[2]}-${match[1]}T00:00:00Z`);
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: 'short',
+  }).format(date);
+}
+
 const MONTH_NAMES = [
   'January',
   'February',

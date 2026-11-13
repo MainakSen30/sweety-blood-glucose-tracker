@@ -1,5 +1,33 @@
 import type { Reading, ReadingSlot } from '../types/reading.js';
 import type { ChartPoint } from '../components/charts/ValueBars.js';
+import { SLOT_ORDER } from './slots.js';
+
+/**
+ * Reading order for the trend chart: chronological by date, then by the
+ * application's slot order. The list endpoint returns newest-first, so the
+ * chart cannot rely on its ordering. DD-MM-YYYY does not sort
+ * lexicographically, hence the explicit YYYY-MM-DD key.
+ */
+export function chronologicalReadings<
+  T extends { readingDate: string; slot: ReadingSlot; id?: string },
+>(readings: readonly T[]): T[] {
+  return [...readings].sort((a, b) => {
+    const dateOrder = sortKey(a.readingDate).localeCompare(sortKey(b.readingDate));
+
+    if (dateOrder !== 0) return dateOrder;
+
+    const slotOrder = SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot);
+
+    if (slotOrder !== 0) return slotOrder;
+
+    return (a.id ?? '').localeCompare(b.id ?? '');
+  });
+}
+
+function sortKey(apiDate: string): string {
+  const [day = '', month = '', year = ''] = apiDate.split('-');
+  return `${year}-${month}-${day}`;
+}
 
 /** Counts of readings per slot from any array of objects with a .slot field. */
 export function slotCounts(

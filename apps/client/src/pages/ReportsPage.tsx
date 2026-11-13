@@ -19,6 +19,7 @@ import { Field, Input } from '../components/ui/Input.js';
 import { ReportSummaryStats } from '../components/reports/ReportSummaryStats.js';
 import { ValueBars } from '../components/charts/ValueBars.js';
 import { SlotDonutChart } from '../components/charts/SlotDonutChart.js';
+import { GlucoseTrendChart } from '../components/charts/GlucoseTrendChart.js';
 import { ReadingsList } from '../components/readings/ReadingsList.js';
 
 type ReportTab = 'daily' | 'month-to-date' | 'monthly';
@@ -135,7 +136,7 @@ export default function ReportsPage() {
           transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
         >
           {loading ? (
-            <div className="flex justify-center py-20">
+            <div role="status" aria-label="Loading report" className="flex justify-center py-20">
               <Spinner className="size-6 text-olive" />
             </div>
           ) : error ? (
@@ -207,6 +208,9 @@ function DailyReportView({
 
       {report.readings.length > 0 ? (
         <>
+          <Card>
+            <GlucoseTrendChart readings={report.readings} />
+          </Card>
           <Card>
             <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
               {/* Bar chart — ~65% */}
@@ -293,31 +297,36 @@ function PeriodReportView({
       </Card>
 
       {readings.length > 0 ? (
-        <Card>
-          <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
-            {/* Bar chart — ~65% */}
-            <div className="min-w-0 lg:flex-[65]">
-              <h3 className="text-sm font-semibold text-ink">
-                Daily averages (mg/dL) — only days with readings
-              </h3>
-              <div className="mt-4">
-                <ValueBars
-                  points={dailyAveragePoints(readings)}
-                  average={report.summary.average}
-                  title="Average glucose per day across the report period"
-                  animate
-                />
+        <>
+          <Card>
+            <GlucoseTrendChart readings={readings} />
+          </Card>
+          <Card>
+            <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
+              {/* Bar chart — ~65% */}
+              <div className="min-w-0 lg:flex-[65]">
+                <h3 className="text-sm font-semibold text-ink">
+                  Daily averages (mg/dL) — only days with readings
+                </h3>
+                <div className="mt-4">
+                  <ValueBars
+                    points={dailyAveragePoints(readings)}
+                    average={report.summary.average}
+                    title="Average glucose per day across the report period"
+                    animate
+                  />
+                </div>
+              </div>
+              {/* Donut chart — ~35% */}
+              <div className="shrink-0 lg:flex-[35]">
+                <h3 className="text-sm font-semibold text-ink">Readings by time slot</h3>
+                <div className="mt-4">
+                  <SlotDonutChart counts={slotCounts(readings)} />
+                </div>
               </div>
             </div>
-            {/* Donut chart — ~35% */}
-            <div className="shrink-0 lg:flex-[35]">
-              <h3 className="text-sm font-semibold text-ink">Readings by time slot</h3>
-              <div className="mt-4">
-                <SlotDonutChart counts={slotCounts(readings)} />
-              </div>
-            </div>
-          </div>
-        </Card>
+          </Card>
+        </>
       ) : (
         <Card>
           <p className="py-8 text-center text-sm text-ink-soft">

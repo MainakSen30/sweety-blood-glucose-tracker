@@ -3,6 +3,7 @@ import {
   apiDateToInputValue,
   formatLongDate,
   formatPeriodLabel,
+  formatShortDate,
   inputValueToApiDate,
   todayApiDate,
 } from './date';
@@ -32,6 +33,10 @@ describe('API ↔ input date conversion', () => {
 
   it('formats long dates for headings', () => {
     expect(formatLongDate('15-01-2026')).toBe('15 January 2026');
+  });
+
+  it('formats compact dates for chart axes', () => {
+    expect(formatShortDate('01-11-2026')).toBe('01 Nov');
   });
 
   it('formats a single-month period compactly', () => {

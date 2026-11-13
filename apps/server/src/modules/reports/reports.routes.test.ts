@@ -391,6 +391,85 @@ describe('GET /api/reports/month-to-date', () => {
   });
 });
 
+describe('report chart data source', () => {
+  it('serves the month-to-date chart window as individual, user-scoped readings', async () => {
+    const userA = await registerTestUser('report-a@example.com');
+    const userB = await registerTestUser('report-b@example.com');
+
+    await seedReading(userA, '01-01-2026', 'morning', 90); // first-day boundary
+    await seedReading(userA, '02-01-2026', 'morning', 100);
+    await seedReading(userA, '02-01-2026', 'after_lunch', 120);
+    await seedReading(userA, '02-01-2026', 'after_dinner', 150);
+    await seedReading(userA, '05-01-2026', 'after_breakfast', 110);
+    await seedReading(userA, '15-12-2025', 'morning', 199); // outside the period
+    await seedReading(userB, '02-01-2026', 'morning', 600); // other user
+
+    const report = await request(app)
+      .get('/api/reports/month-to-date')
+      .set('Cookie', userA)
+      .query({ date: REPORT_DATE });
+    const chart = await request(app).get('/api/readings').set('Cookie', userA).query({
+      from: report.body.period.startDate,
+      to: report.body.period.endDate,
+      limit: 100,
+    });
+
+    expect(chart.status).toBe(200);
+    expect(chart.body.pagination.total).toBe(5);
+    expect(
+      chart.body.data.map((item: { readingDate: string; slot: string; value: number }) => [
+        item.readingDate,
+        item.slot,
+        item.value,
+      ]),
+    ).toEqual([
+      ['05-01-2026', 'after_breakfast', 110],
+      ['02-01-2026', 'morning', 100],
+      ['02-01-2026', 'after_lunch', 120],
+      ['02-01-2026', 'after_dinner', 150],
+      ['01-01-2026', 'morning', 90],
+    ]);
+  });
+
+  it('serves the previous-month window with inclusive calendar boundaries', async () => {
+    const userA = await registerTestUser('report-a@example.com');
+    const previous = previousMonthRange(todayInAppTimezone());
+    const beforePrevious = previousMonthRange(previous.startDate).endDate;
+
+    await seedReading(userA, toDDMMYYYY(previous.startDate), 'morning', 100);
+    await seedReading(userA, toDDMMYYYY(previous.endDate), 'after_dinner', 150);
+    await seedReading(userA, toDDMMYYYY(beforePrevious), 'morning', 80); // earlier month
+    await seedReading(userA, toDDMMYYYY(todayInAppTimezone()), 'morning', 600); // current month
+
+    const report = await request(app).get('/api/reports/monthly').set('Cookie', userA);
+    const chart = await request(app).get('/api/readings').set('Cookie', userA).query({
+      from: report.body.period.startDate,
+      to: report.body.period.endDate,
+      limit: 100,
+    });
+
+    expect(chart.status).toBe(200);
+    expect(chart.body.pagination.total).toBe(2);
+    expect(chart.body.data.map((item: { readingDate: string }) => item.readingDate)).toEqual([
+      toDDMMYYYY(previous.endDate),
+      toDDMMYYYY(previous.startDate),
+    ]);
+  });
+
+  it('returns valid empty chart data for a period without readings', async () => {
+    const cookie = await registerTestUser('report-empty@example.com');
+
+    const chart = await request(app)
+      .get('/api/readings')
+      .set('Cookie', cookie)
+      .query({ from: '01-01-2026', to: REPORT_DATE, limit: 100 });
+
+    expect(chart.status).toBe(200);
+    expect(chart.body.data).toEqual([]);
+    expect(chart.body.pagination).toMatchObject({ total: 0, totalPages: 0 });
+  });
+});
+
 describe('GET /api/reports/monthly', () => {
   it('reports the whole previous calendar month and excludes current-month readings', async () => {
     const cookie = await registerTestUser('report-a@example.com');
