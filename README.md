@@ -1097,7 +1097,8 @@ Phase 4 delivered the React frontend (`apps/client`):
   `components/ui` (Button, Field/Input, Dialog, Card, StatusNote, authored SVG icons),
   `components/readings` (form dialog, grouped list, shared add/edit/delete dialog state),
   `components/reports` + `components/charts`, `lib` (date, slots, chart, status-note helpers),
-  and five pages wired through React Router.
+  and six pages (public landing, auth, dashboard, readings, reports) wired through React Router
+  — the dashboard lives at `/today`, guests land on `/`.
 - **Session.** `AuthProvider` resolves the session on load with `GET /api/auth/me` (401 →
   unauthenticated). Login/register POST to the existing endpoints; the HTTP-only cookie remains
   the only credential anywhere.
