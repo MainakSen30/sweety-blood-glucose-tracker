@@ -1,5 +1,21 @@
-import type { Reading } from '../types/reading.js';
+import type { Reading, ReadingSlot } from '../types/reading.js';
 import type { ChartPoint } from '../components/charts/ValueBars.js';
+
+/** Counts of readings per slot from any array of objects with a .slot field. */
+export function slotCounts(
+  readings: ReadonlyArray<{ slot: ReadingSlot }>,
+): Record<ReadingSlot, number> {
+  const counts: Record<ReadingSlot, number> = {
+    morning: 0,
+    after_breakfast: 0,
+    after_lunch: 0,
+    after_dinner: 0,
+  };
+  for (const r of readings) {
+    counts[r.slot] = (counts[r.slot] ?? 0) + 1;
+  }
+  return counts;
+}
 
 /**
  * One point per day that has readings: the day's mean, labeled by day of

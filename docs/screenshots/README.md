@@ -12,8 +12,12 @@ Before capturing:
    ```
 2. The seed data must be loaded so realistic readings are visible:
    ```bash
-   # Ensure SEED_DEMO_DATA=true is in .env (or prepend it inline)
-   npm run db:seed
+   # Supply SEED_DEMO_DATA=true explicitly on the command line (the npm script does NOT set it)
+   SEED_DEMO_DATA=true npm run db:seed
+   ```
+   Or via Docker Compose:
+   ```bash
+   docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx /app/apps/server/src/database/seed.ts"
    ```
 3. Demo credentials:
    - **Email:** `demo@sweety.local`
@@ -55,7 +59,7 @@ Before capturing:
 ### `06-daily-report.png` — Daily report with chart
 
 - URL: `http://localhost:5173/reports`
-- State: logged in; daily tab selected; a date with 4 readings selected (run `npm run db:seed` first to populate data)
+- State: logged in; daily tab selected; a date with 4 readings selected (run `SEED_DEMO_DATA=true npm run db:seed` first to populate data)
 - Notes: the bar chart and summary statistics (highest, lowest, average, total) should all be visible
 
 ### `07-monthly-reports.png` — Monthly reports view

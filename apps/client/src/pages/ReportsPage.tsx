@@ -11,13 +11,14 @@ import {
   inputValueToApiDate,
   todayApiDate,
 } from '../lib/date.js';
-import { dailyAveragePoints } from '../lib/chart.js';
+import { dailyAveragePoints, slotCounts } from '../lib/chart.js';
 import { slotShortLabel } from '../lib/slots.js';
 import { Button, Spinner } from '../components/ui/Button.js';
 import { Card } from '../components/ui/Card.js';
 import { Field, Input } from '../components/ui/Input.js';
 import { ReportSummaryStats } from '../components/reports/ReportSummaryStats.js';
 import { ValueBars } from '../components/charts/ValueBars.js';
+import { SlotDonutChart } from '../components/charts/SlotDonutChart.js';
 import { ReadingsList } from '../components/readings/ReadingsList.js';
 
 type ReportTab = 'daily' | 'month-to-date' | 'monthly';
@@ -207,17 +208,29 @@ function DailyReportView({
       {report.readings.length > 0 ? (
         <>
           <Card>
-            <h3 className="text-sm font-semibold text-ink">This day's readings (mg/dL)</h3>
-            <div className="mt-4">
-              <ValueBars
-                points={report.readings.map((reading) => ({
-                  label: slotShortLabel(reading.slot),
-                  value: reading.value,
-                }))}
-                average={report.summary.average}
-                title="Glucose values by reading slot for this day"
-                animate
-              />
+            <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
+              {/* Bar chart — ~65% */}
+              <div className="min-w-0 lg:flex-[65]">
+                <h3 className="text-sm font-semibold text-ink">This day's readings (mg/dL)</h3>
+                <div className="mt-4">
+                  <ValueBars
+                    points={report.readings.map((reading) => ({
+                      label: slotShortLabel(reading.slot),
+                      value: reading.value,
+                    }))}
+                    average={report.summary.average}
+                    title="Glucose values by reading slot for this day"
+                    animate
+                  />
+                </div>
+              </div>
+              {/* Donut chart — ~35% */}
+              <div className="shrink-0 lg:flex-[35]">
+                <h3 className="text-sm font-semibold text-ink">Readings by time slot</h3>
+                <div className="mt-4">
+                  <SlotDonutChart counts={slotCounts(report.readings)} />
+                </div>
+              </div>
             </div>
           </Card>
           <Card>
@@ -281,16 +294,28 @@ function PeriodReportView({
 
       {readings.length > 0 ? (
         <Card>
-          <h3 className="text-sm font-semibold text-ink">
-            Daily averages (mg/dL) — only days with readings
-          </h3>
-          <div className="mt-4">
-            <ValueBars
-              points={dailyAveragePoints(readings)}
-              average={report.summary.average}
-              title="Average glucose per day across the report period"
-              animate
-            />
+          <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
+            {/* Bar chart — ~65% */}
+            <div className="min-w-0 lg:flex-[65]">
+              <h3 className="text-sm font-semibold text-ink">
+                Daily averages (mg/dL) — only days with readings
+              </h3>
+              <div className="mt-4">
+                <ValueBars
+                  points={dailyAveragePoints(readings)}
+                  average={report.summary.average}
+                  title="Average glucose per day across the report period"
+                  animate
+                />
+              </div>
+            </div>
+            {/* Donut chart — ~35% */}
+            <div className="shrink-0 lg:flex-[35]">
+              <h3 className="text-sm font-semibold text-ink">Readings by time slot</h3>
+              <div className="mt-4">
+                <SlotDonutChart counts={slotCounts(readings)} />
+              </div>
+            </div>
           </div>
         </Card>
       ) : (

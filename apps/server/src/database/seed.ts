@@ -7,8 +7,9 @@
  * SAFETY REQUIREMENTS (all must pass or the script exits):
  *   1. NODE_ENV must NOT be 'production'.
  *   2. SEED_DEMO_DATA must be exactly 'true'.
- *   3. DATABASE_URL database name must contain 'dev', 'demo', 'local', or
- *      'test' — this prevents an accidental run against a production database.
+ *   3. DATABASE_URL database name must be on the explicit allowlist of safe
+ *      local/demo databases. Test databases (names ending in _test or -test)
+ *      are always rejected even if SEED_DEMO_DATA is set.
  *   4. TEST_DATABASE_URL is never used here.
  *   5. No TRUNCATE, DROP, or DELETE against user data.
  *   6. Existing demo account password is never overwritten.
@@ -17,9 +18,11 @@
  *
  * Run via:
  *   SEED_DEMO_DATA=true tsx src/database/seed.ts
- * Or via the package script:
- *   npm run db:seed          (from apps/server/)
- *   npm run db:seed          (from repo root)
+ * Or via the package script (SEED_DEMO_DATA must be supplied externally):
+ *   SEED_DEMO_DATA=true npm run db:seed          (from apps/server/)
+ *   SEED_DEMO_DATA=true npm run db:seed          (from repo root)
+ * Docker Compose:
+ *   docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx /app/apps/server/src/database/seed.ts"
  */
 
 import { dirname, resolve } from 'node:path';
@@ -33,14 +36,112 @@ import * as schema from './schema.js';
 import { todayInAppTimezone } from '../utils/date.js';
 
 // ---------------------------------------------------------------------------
-// Bootstrap environment (same pattern as drizzle.config.ts)
+// Bootstrap helpers
 // ---------------------------------------------------------------------------
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
-loadEnvFile({ path: resolve(currentDirectory, '../../../../.env'), quiet: true });
 
 // ---------------------------------------------------------------------------
-// Safety checks — all mandatory; script exits if any check fails
+// Guard logic — exported for unit testing (no database I/O)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses the database name from a PostgreSQL connection string.
+ * Returns null if the URL is malformed or the database name is absent.
+ */
+export function extractDatabaseName(connectionString: string): string | null {
+  try {
+    const normalised = connectionString.replace(/^postgresql:\/\//, 'postgres://');
+    const url = new URL(normalised);
+    return url.pathname.slice(1) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Strict allowlist of database names that the seed script is permitted to
+ * write to. This list is derived from .env.example and the actual project
+ * configuration; do not expand it without deliberate review.
+ *
+ * Rationale for each entry:
+ *   sweety       — the default local development database documented in
+ *                  .env.example and used by developers running outside Docker.
+ *   sweety_dev   — an explicitly named development variant (e.g. after a
+ *                  manual rename from sweety).
+ *   sweety_demo  — a dedicated demo database for evaluation/staging.
+ *
+ * Names NOT on this list:
+ *   sweety_test  — test database; Vitest truncates it; never seed here.
+ *   sweety-test  — same as above with hyphen separator.
+ *   production   — obvious.
+ *   anything else not explicitly listed.
+ */
+const ALLOWED_DB_NAMES = new Set(['sweety', 'sweety_dev', 'sweety_demo']);
+
+/**
+ * Validates all seed safety guards. Returns a string error message on the
+ * first failing check, or null if all checks pass.
+ *
+ * Accepts an env-like object so the function can be tested without side effects.
+ */
+export function validateSeedGuards(env: {
+  NODE_ENV?: string;
+  SEED_DEMO_DATA?: string;
+  DATABASE_URL?: string;
+}): string | null {
+  // 1. Refuse production
+  if (env.NODE_ENV === 'production') {
+    return 'NODE_ENV is set to "production". This seed script must never run in production.';
+  }
+
+  // 2. Require explicit opt-in
+  if (env.SEED_DEMO_DATA !== 'true') {
+    return (
+      'SEED_DEMO_DATA is not set to "true".\n' +
+      '  Supply it explicitly — do NOT rely on the npm script to set it.\n' +
+      '  Run: SEED_DEMO_DATA=true npm run db:seed'
+    );
+  }
+
+  // 3. DATABASE_URL must be present
+  if (!env.DATABASE_URL) {
+    return 'DATABASE_URL is not set. Copy .env.example to .env at the repository root.';
+  }
+
+  // 4. Parse the database name
+  const dbName = extractDatabaseName(env.DATABASE_URL);
+  if (!dbName) {
+    return (
+      'Could not parse the database name from DATABASE_URL. ' +
+      'Ensure the URL is a valid PostgreSQL connection string.'
+    );
+  }
+
+  // 5. Explicitly reject test databases before the allowlist check.
+  //    A name ending in _test or -test is always a test database, even if
+  //    SEED_DEMO_DATA=true was set by mistake.
+  if (/_test$|-test$/i.test(dbName)) {
+    return (
+      `DATABASE_URL points to "${dbName}", which looks like a test database. ` +
+      'Test databases must never be seeded. Use a development or demo database instead.'
+    );
+  }
+
+  // 6. Allowlist check — only explicitly designated databases are permitted.
+  if (!ALLOWED_DB_NAMES.has(dbName)) {
+    return (
+      `DATABASE_URL points to database "${dbName}", which is not on the seed allowlist. ` +
+      `Permitted databases: ${[...ALLOWED_DB_NAMES].join(', ')}. ` +
+      'Update DATABASE_URL to a permitted development or demo database.'
+    );
+  }
+
+  return null; // all checks passed
+}
+
+// ---------------------------------------------------------------------------
+// Safety checks — run only when executed directly (not when imported for testing)
 // ---------------------------------------------------------------------------
 
 function exitWithError(message: string): never {
@@ -48,59 +149,37 @@ function exitWithError(message: string): never {
   process.exit(1);
 }
 
-// 1. Refuse to run in production
-if (process.env.NODE_ENV === 'production') {
-  exitWithError('NODE_ENV is set to "production". This seed script must never run in production.');
-}
+// Detect whether this module is the entry point (direct execution via tsx/node)
+// vs being imported by a test. import.meta.url equals the resolved file URL only
+// when it is the main module; we compare against process.argv[1].
+const currentModulePath = fileURLToPath(import.meta.url);
+const isDirectExecution =
+  process.argv[1] !== undefined &&
+  (process.argv[1] === currentModulePath ||
+    // tsx rewrites the path, so also check without extension
+    process.argv[1].replace(/\.[jt]s$/, '') === currentModulePath.replace(/\.[jt]s$/, ''));
 
-// 2. Require explicit opt-in flag
-if (process.env.SEED_DEMO_DATA !== 'true') {
-  exitWithError(
-    'SEED_DEMO_DATA is not set to "true".\n' +
-      '  Set SEED_DEMO_DATA=true in .env or run:\n' +
-      '    SEED_DEMO_DATA=true npm run db:seed',
-  );
-}
+// Module-level variables used by seed() — only populated when running directly.
+let rawDatabaseUrl = '';
+let dbName = '';
 
-// 3. Check DATABASE_URL exists and database name looks non-production
-const rawDatabaseUrl = process.env.DATABASE_URL;
-if (!rawDatabaseUrl) {
-  exitWithError('DATABASE_URL is not set. Copy .env.example to .env at the repository root.');
-}
+if (isDirectExecution) {
+  // Load .env relative to the monorepo root (same pattern as drizzle.config.ts)
+  loadEnvFile({ path: resolve(currentDirectory, '../../../../.env'), quiet: true });
 
-function extractDatabaseName(connectionString: string): string | null {
-  try {
-    // Handle both postgres:// and postgresql:// schemes
-    const normalised = connectionString.replace(/^postgresql:\/\//, 'postgres://');
-    const url = new URL(normalised);
-    // pathname is '/<dbname>', strip the leading slash
-    return url.pathname.slice(1) || null;
-  } catch {
-    return null;
+  const guardError = validateSeedGuards({
+    NODE_ENV: process.env.NODE_ENV,
+    SEED_DEMO_DATA: process.env.SEED_DEMO_DATA,
+    DATABASE_URL: process.env.DATABASE_URL,
+  });
+  if (guardError) {
+    exitWithError(guardError);
   }
-}
 
-const dbName = extractDatabaseName(rawDatabaseUrl);
-if (!dbName) {
-  exitWithError(
-    'Could not parse the database name from DATABASE_URL. ' +
-      'Ensure the URL is a valid PostgreSQL connection string.',
-  );
+  // Guards passed — these are now guaranteed non-null.
+  rawDatabaseUrl = process.env.DATABASE_URL as string;
+  dbName = extractDatabaseName(rawDatabaseUrl) as string;
 }
-
-// 'sweety' (without a suffix) is the conventional local dev DB name for this project.
-const NON_PRODUCTION_PATTERNS = /dev|demo|local|test|^sweety$/i;
-if (!NON_PRODUCTION_PATTERNS.test(dbName)) {
-  exitWithError(
-    `DATABASE_URL points to database "${dbName}", which does not look like a ` +
-      'development or demo database (name must contain dev, demo, local, or test, ' +
-      'or be exactly "sweety" for the default local setup). ' +
-      'Update DATABASE_URL to a safe development database before running the seed.',
-  );
-}
-
-// 4. Never connect to TEST_DATABASE_URL — handled by simply not reading it here.
-//    We only use DATABASE_URL read above.
 
 // ---------------------------------------------------------------------------
 // Demo data constants
@@ -314,7 +393,9 @@ async function seed(): Promise<void> {
   }
 }
 
-seed().catch((error: unknown) => {
-  console.error('\n[seed] ✗  Seed failed:', error);
-  process.exit(1);
-});
+if (isDirectExecution) {
+  seed().catch((error: unknown) => {
+    console.error('\n[seed] ✗  Seed failed:', error);
+    process.exit(1);
+  });
+}

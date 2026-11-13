@@ -325,18 +325,13 @@ the application can be evaluated without entering real personal data.
 
 ### Enable the seed
 
-The seed requires an explicit opt-in in `.env`:
-
-```dotenv
-SEED_DEMO_DATA=true
-```
-
-Then run:
+The `npm run db:seed` command **does not** set `SEED_DEMO_DATA` automatically. You must supply it
+explicitly on the command line each time you intend to seed.
 
 **Running locally (host PostgreSQL):**
 
 ```bash
-npm run db:seed
+SEED_DEMO_DATA=true npm run db:seed
 ```
 
 **Running via Docker Compose:**
@@ -378,8 +373,9 @@ The seed is safe to run multiple times:
 The seed refuses to run unless all conditions are met:
 
 1. `NODE_ENV` is not `production`.
-2. `SEED_DEMO_DATA` is exactly `true`.
-3. The database name in `DATABASE_URL` contains `dev`, `demo`, `local`, or `test`.
+2. `SEED_DEMO_DATA` is exactly `true` — supplied explicitly, never set by the npm script.
+3. The database name in `DATABASE_URL` is on the explicit allowlist: `sweety`, `sweety_dev`, `sweety_demo`.
+   Test databases (names ending in `_test` or `-test`) are always rejected.
 4. No existing data is deleted or truncated.
 
 ---

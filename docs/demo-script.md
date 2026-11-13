@@ -10,7 +10,11 @@ A step-by-step script for recording a walkthrough or preparing a live demonstrat
    ```
 2. Load the demo data (creates the demo account and 30 days of synthetic readings):
    ```bash
-   npm run db:seed
+   SEED_DEMO_DATA=true npm run db:seed
+   ```
+   Or via Docker Compose (if running with `docker compose up`):
+   ```bash
+   docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx /app/apps/server/src/database/seed.ts"
    ```
 3. Open a browser at `http://localhost:5173`.
 4. Set the viewport to **1280 × 800** (DevTools → device toolbar → custom dimensions).
@@ -124,5 +128,5 @@ A step-by-step script for recording a walkthrough or preparing a live demonstrat
 ## Notes for the recording
 
 - All glucose values shown are **synthetic demonstration data** — they have no medical significance.
-- The demo account (`demo@sweety.local`) is created by the seed script and can be re-seeded at any time by running `npm run db:seed` again (idempotent — it will not create duplicate readings).
+- The demo account (`demo@sweety.local`) is created by the seed script and can be re-seeded at any time by running `SEED_DEMO_DATA=true npm run db:seed` again (idempotent — it will not create duplicate readings).
 - Do not show or mention real personal health data during the recording.
