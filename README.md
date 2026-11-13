@@ -1,50 +1,170 @@
-# Sweety – Blood Glucose Tracker
+# SWEETy – Blood Glucose Tracker
 
-Sweety is a full-stack web application that will let a diabetes patient record up to four blood
-glucose readings per day and review daily and monthly reports.
+SWEETy is a full-stack web application that lets a person with diabetes record up to four blood
+glucose readings per day across four named time slots, and review daily, month-to-date, and
+previous-month reports with summary statistics.
 
-This repository contains **Phase 0: project foundation**, **Phase 1: authentication and user
-foundation**, **Phase 2: blood glucose readings**, **Phase 3: report generation and analytics**, and
-**Phase 4: frontend implementation and visual design**. It provides the monorepo, tooling,
-configuration, Docker-based development environment, a `users`
-table, cookie-based JWT authentication (`register`, `login`, `me`, `logout`), a complete
-authenticated CRUD API for blood glucose readings, daily / month-to-date / previous-month
-report endpoints backed by PostgreSQL aggregation, and the full React frontend — authentication
-screens, dashboard, reading management, and reports with visualisations. Doctor roles are
-intentionally not implemented.
+This repository covers **Phase 0 through Phase 6**: monorepo foundation, authentication,
+readings CRUD, report generation, React frontend, testing and hardening, and submission
+preparation.
 
-## Where to find what
+---
 
-| Looking for…                                            | Section                                                                                                                                       |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0 scope                                           | [Phase scope → Phase 0 (foundation)](#phase-scope)                                                                                            |
-| Phase 1 — what was built & implementation notes         | [Phase scope → Phase 1](#phase-1-authentication-and-user-foundation) and [Phase 1 implementation notes](#phase-1-implementation-notes)        |
-| Phase 2 — what was built & implementation notes         | [Phase scope → Phase 2](#phase-2-blood-glucose-readings) and [Phase 2 implementation notes](#phase-2-implementation-notes)                    |
-| Phase 3 — what was built & implementation notes         | [Phase scope → Phase 3](#phase-3-report-generation-and-analytics) and [Phase 3 implementation notes](#phase-3-implementation-notes)           |
-| Phase 4 — what was built & implementation notes         | [Phase scope → Phase 4](#phase-4-frontend-implementation-and-visual-design) and [Phase 4 implementation notes](#phase-4-implementation-notes) |
-| Design system (colours, typography, motion)             | [Design system](#design-system)                                                                                                               |
-| Report endpoints, empty behavior, rounding, date ranges | [Blood glucose reports](#blood-glucose-reports)                                                                                               |
-| API endpoints and payloads                              | [API](#api)                                                                                                                                   |
-| Authentication flow, cookies, security, rate limiting   | [Authentication flow](#authentication-flow)                                                                                                   |
-| Database schema and migrations                          | [Database and Drizzle](#database-and-drizzle)                                                                                                 |
-| Reading data model, slots, validation, timezone         | [Blood glucose readings](#blood-glucose-readings)                                                                                             |
-| Running, testing, Docker, ports                         | [Running locally](#running-locally), [Testing setup](#testing-setup), [Docker development](#docker-development)                               |
-| Assumptions and known limitations                       | [Assumptions](#assumptions), [Security decisions and limitations](#security-decisions-and-limitations)                                        |
+## Table of contents
 
-## Tech stack
+- [Project overview](#project-overview)
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Technology stack](#technology-stack)
+- [Architecture](#architecture)
+- [Repository structure](#repository-structure)
+- [Prerequisites](#prerequisites)
+- [Local installation](#local-installation)
+- [Database setup](#database-setup)
+- [Seed data](#seed-data)
+- [Running the application](#running-the-application)
+- [API documentation](#api-documentation)
+- [Testing](#testing)
+- [Security considerations](#security-considerations)
+- [Assumptions and limitations](#assumptions-and-limitations)
+- [Design system](#design-system)
+- [Project phases](#project-phases)
 
-| Area         | Technology                                                           |
-| ------------ | -------------------------------------------------------------------- |
-| Frontend     | React 19, TypeScript 5.9, Vite 8, React Router 7, Tailwind CSS 4     |
-| Backend      | Node.js 22, Express 5, TypeScript 5.9, Zod 4, bcryptjs, jsonwebtoken |
-| Database     | PostgreSQL 17 (Docker), Drizzle ORM 0.45, `pg`                       |
-| Testing      | Vitest 4, React Testing Library, Supertest, jsdom                    |
-| Code quality | ESLint 10 (flat config), Prettier 3, strict TypeScript               |
-| Dev tooling  | npm workspaces, `concurrently`, `tsx`                                |
-| Containers   | Docker Compose with separate client, server, and PostgreSQL services |
+---
 
-**Package manager:** npm. The project was originally scoped with Bun, but the Docker requirement
-specified Node.js and npm; npm workspaces are therefore used consistently.
+## Project overview
+
+SWEETy helps people managing diabetes track blood glucose levels without relying on a paper
+logbook or a generic spreadsheet. A user logs in, records readings at up to four named points in
+the day (morning fasting, after breakfast, after lunch, after dinner), and can review statistics
+for any single day, the current month up to today, or the full previous calendar month.
+
+The application is designed for personal, single-user use (one account per person). Doctor roles,
+shared access, reminders, and notifications are intentionally out of scope for this release.
+
+Main user workflows:
+
+1. **Register or log in** using email and password.
+2. **Record a reading** — pick the date, the slot, and enter the mg/dL value.
+3. **Review the dashboard** — see today's readings at a glance, plus MTD and previous-month
+   summaries.
+4. **Browse history** — paginate through all past readings, optionally filtered by date.
+5. **Open reports** — daily detail with a bar chart, or aggregate summaries for the month.
+6. **Edit or delete** any of your own readings.
+7. **Log out** — the session cookie is cleared server-side.
+
+---
+
+## Features
+
+### Authentication
+
+- User registration with name, email, and password
+- Login and logout
+- bcrypt password hashing (cost factor 12)
+- JWT authentication (HS256) stored in an HTTP-only cookie — no tokens in localStorage
+- Session resolved on page load via `GET /api/auth/me`
+- Protected API endpoints and client-side route guards
+- Authentication rate limiting (20 requests per 15 minutes by default)
+
+### Glucose reading management
+
+- Create, read, update, and delete blood glucose readings
+- Four named daily slots: morning (fasting), after breakfast, after lunch, after dinner
+- Maximum four readings per day per user (one per slot)
+- Ownership enforcement on every query — a user's readings are never visible to another
+- Date filtering and range filtering on the list endpoint
+- Glucose values validated to 40–600 mg/dL
+- Dates stored as PostgreSQL `DATE` values in YYYY-MM-DD and exposed in DD-MM-YYYY format
+- "Today" for the future-date rule computed in Asia/Kolkata timezone
+
+### Reports
+
+- **Daily report** — all readings for a chosen day in slot order, plus highest/lowest/average/count
+- **Month-to-date report** — aggregates from the first of the current month through the chosen date
+- **Previous-month report** — full calendar month before today, with correct January → December
+  rollover and leap-year handling
+- Aggregation computed in PostgreSQL (`MAX`, `MIN`, `AVG`, `COUNT`) — not fetched and filtered in
+  JavaScript
+- Average rounded to one decimal place; `null` (never `0`) when a period has no readings
+
+### Frontend
+
+- Landing page with product introduction
+- Registration and login screens with client-side form feedback
+- Authenticated dashboard: time-aware greeting, four daily slots, overview summary cards
+- Readings history page with optional single-day filter
+- Reading add/edit/delete dialogs with field-level validation messages
+- Reports page with daily, month-to-date, and previous-month tabs; bar charts; summary statistics
+- Responsive layout (mobile-first, works on 320 px–1440 px+ viewports)
+- Cream and dark olive visual identity with accessible colour contrast
+- Motion animations (page entrance, dialog open/close, tab crossfade) with `prefers-reduced-motion`
+  support
+
+### Testing
+
+- 148 passing tests across 9 test files (see CI output for current results)
+- Server integration tests using Supertest against a real PostgreSQL test database
+- Client unit tests with Vitest and React Testing Library
+- TypeScript strict mode — zero type errors
+- ESLint clean — zero lint warnings or errors
+- Prettier formatting enforced
+- Both client and server production builds verified
+
+---
+
+## Screenshots
+
+Screenshots pending manual capture — see [docs/screenshots/README.md](docs/screenshots/README.md)
+for step-by-step capture instructions.
+
+| File                                      | Page                         |
+| ----------------------------------------- | ---------------------------- |
+| `docs/screenshots/01-landing.png`         | Landing page                 |
+| `docs/screenshots/02-login.png`           | Login page                   |
+| `docs/screenshots/03-register.png`        | Registration page            |
+| `docs/screenshots/04-dashboard.png`       | Dashboard with demo readings |
+| `docs/screenshots/05-readings.png`        | Readings history page        |
+| `docs/screenshots/06-daily-report.png`    | Daily report with bar chart  |
+| `docs/screenshots/07-monthly-reports.png` | Monthly reports view         |
+
+---
+
+## Technology stack
+
+| Area         | Technology                                                       |
+| ------------ | ---------------------------------------------------------------- |
+| Frontend     | React 19, TypeScript 5.9, Vite 8, React Router 7, Tailwind CSS 4 |
+| Animations   | Motion (`motion/react`, formerly Framer Motion)                  |
+| Backend      | Node.js 22, Express 5, TypeScript 5.9, Zod 4                     |
+| Auth         | bcryptjs, jsonwebtoken, HTTP-only cookies                        |
+| Database     | PostgreSQL 17, Drizzle ORM 0.45, `pg`                            |
+| Testing      | Vitest 4, React Testing Library, Supertest, jsdom                |
+| Code quality | ESLint 10 (flat config), Prettier 3, strict TypeScript           |
+| Dev tooling  | npm workspaces, `concurrently`, `tsx`                            |
+| Containers   | Docker Compose with client, server, and PostgreSQL services      |
+
+**Package manager:** npm. The project was scoped with Bun but the Docker requirement specified
+Node.js and npm; npm workspaces are used consistently throughout.
+
+---
+
+## Architecture
+
+SWEETy is an **npm-workspace monorepo** with two independently runnable applications:
+
+- `apps/client` — Vite + React 19 single-page application. Communicates with the API over
+  relative `/api/...` URLs (proxied by Vite in development, served through the same origin in
+  production-like setups). No tokens are stored in browser storage; the HTTP-only cookie is the
+  only credential.
+- `apps/server` — Express 5 REST API. Organised as a modular structure: each domain (auth,
+  readings, reports) has its own routes → controller → service → repository layers. Schema and
+  migrations are managed with Drizzle ORM.
+
+The two workspaces share a single root `.env` file (git-ignored) and are started together with
+`npm run dev` via `concurrently`.
+
+---
 
 ## Repository structure
 
@@ -53,15 +173,20 @@ sweety/
 ├── apps/
 │   ├── client/
 │   │   ├── src/
-│   │   │   ├── components/          # Placeholder for future components
-│   │   │   ├── pages/               # HomePage placeholder
-│   │   │   ├── hooks/               # Placeholder for future hooks
-│   │   │   ├── services/            # Typed API clients (authApi.ts, readingsApi.ts, http.ts)
-│   │   │   ├── types/               # Client types (user.ts, reading.ts)
-│   │   │   ├── lib/                 # Placeholder for future utilities
+│   │   │   ├── components/
+│   │   │   │   ├── charts/          # ValueBars chart component
+│   │   │   │   ├── layout/          # AppLayout, AuthLayout
+│   │   │   │   ├── readings/        # ReadingFormDialog, ReadingsList, DeleteReadingDialog
+│   │   │   │   ├── reports/         # ReportSummaryStats
+│   │   │   │   └── ui/              # Button, Card, Dialog, Input, StatusNote, icons
+│   │   │   ├── context/             # AuthContext.tsx, auth.ts (useAuth hook)
+│   │   │   ├── lib/                 # date.ts, slots.ts, chart.ts, useStatusNote.ts
+│   │   │   ├── pages/               # LandingPage, LoginPage, RegisterPage,
+│   │   │   │                        # DashboardPage, ReadingsPage, ReportsPage
+│   │   │   ├── services/            # authApi.ts, readingsApi.ts, reportsApi.ts, http.ts
+│   │   │   ├── types/               # user.ts, reading.ts, report.ts
 │   │   │   ├── App.tsx
-│   │   │   ├── App.test.tsx
-│   │   │   ├── index.css
+│   │   │   ├── index.css            # Tailwind v4 CSS-first config + design tokens
 │   │   │   ├── main.tsx
 │   │   │   └── setupTests.ts
 │   │   ├── Dockerfile
@@ -71,21 +196,32 @@ sweety/
 │   │   └── vite.config.ts
 │   └── server/
 │       ├── src/
-│       │   ├── config/env.ts
+│       │   ├── config/
+│       │   │   └── env.ts           # Zod-validated environment schema
 │       │   ├── database/
-│       │   │   ├── index.ts
-│       │   │   └── schema.ts
-│       │   ├── middleware/          # auth.ts (JWT), rate-limit.ts
+│       │   │   ├── index.ts         # pg Pool + Drizzle client
+│       │   │   ├── schema.ts        # users, readings, enums
+│       │   │   └── seed.ts          # Demo data seed script
+│       │   ├── middleware/
+│       │   │   ├── auth.ts          # requireAuth JWT middleware
+│       │   │   └── rate-limit.ts    # Auth rate limiter factory
 │       │   ├── modules/
-│       │   │   ├── auth/            # routes, controller, service, repository, validation, types, tokens, tests
-│       │   │   ├── health/health.routes.ts
-│       │   │   └── readings/        # routes, controller, service, repository, validation, types, messages, tests
-│       │   ├── utils/               # errors.ts, validation.ts, date.ts, database-errors.ts
+│       │   │   ├── auth/            # routes, controller, service, repository,
+│       │   │   │                    # validation, types, tokens — with tests
+│       │   │   ├── health/          # health.routes.ts
+│       │   │   ├── readings/        # routes, controller, service, repository,
+│       │   │   │                    # validation, types, messages — with tests
+│       │   │   └── reports/         # routes, controller, service, repository,
+│       │   │                        # validation, types — with tests
+│       │   ├── utils/
+│       │   │   ├── database-errors.ts
+│       │   │   ├── date.ts          # todayInAppTimezone, parseDDMMYYYY, toDDMMYYYY
+│       │   │   ├── errors.ts        # HttpError
+│       │   │   └── validation.ts
 │       │   ├── app.ts
-│       │   ├── app.test.ts
 │       │   └── server.ts
-│       ├── tests/                   # Vitest setup (dedicated test database)
-│       ├── drizzle/                 # Generated migrations live here
+│       ├── drizzle/                 # Generated SQL migrations
+│       ├── tests/                   # Vitest global setup (test DB migration)
 │       ├── Dockerfile
 │       ├── drizzle.config.ts
 │       ├── package.json
@@ -93,9 +229,14 @@ sweety/
 │       ├── tsconfig.build.json
 │       └── vitest.config.ts
 ├── docs/
-│   └── README.md
+│   ├── screenshots/                 # Screenshot capture instructions and images
+│   │   └── README.md
+│   ├── demo-script.md               # Step-by-step demo walkthrough script
+│   └── README.md                    # Phase 0 notes
+├── plans/                           # Animation implementation plans
+├── .agents/                         # Agent task files and audit logs
 ├── .dockerignore
-├── .env.example
+├── .env.example                     # Environment variable documentation template
 ├── .gitignore
 ├── .prettierignore
 ├── .prettierrc.json
@@ -107,206 +248,233 @@ sweety/
 └── tsconfig.base.json
 ```
 
-The application code is a modular monolith split into independently runnable frontend and backend
-workspaces. There is no separate shared package yet; shared contracts can be introduced when the
-domain model is designed.
+---
 
 ## Prerequisites
 
-- **Node.js** `^22.13.0` or `>=24.0.0`. Node.js 22 LTS is recommended and is used by the Docker images.
-- **npm** `>=10`.
-- **PostgreSQL** 16+ for local development without Docker.
+- **Node.js** `^22.13.0` or `>=24.0.0`. Node.js 22 LTS is recommended and matches the Docker images.
+- **npm** `>=10.0.0`.
 - **Docker Desktop** (or Docker Engine with Compose v2) for the Docker workflow.
-- No Bun installation is required.
+- **PostgreSQL 16+** only if running outside Docker; version 17 is used in Docker.
 
-## Install dependencies
+---
 
-From the repository root:
+## Local installation
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/MainakSen30/sweety-blood-glucose-tracker.git
+cd sweety-blood-glucose-tracker
+
+# 2. Install all workspace dependencies
 npm install
-```
 
-Dependencies for both workspaces are installed and hoisted by npm.
-
-## Environment configuration
-
-Both applications and Docker Compose use a single, git-ignored `.env` file at the repository root.
-Create it from the example:
-
-```bash
+# 3. Create your local environment file
 cp .env.example .env
 ```
 
-Then update the values for your machine. The example contains placeholders only.
+Open `.env` and update at minimum:
 
-| Variable                    | Purpose                                                                 | Local default           |
-| --------------------------- | ----------------------------------------------------------------------- | ----------------------- |
-| `NODE_ENV`                  | Runtime mode (`development`, `test`, or `production`)                   | `development`           |
-| `PORT`                      | Port used by the Express server when running locally                    | `5000`                  |
-| `CLIENT_URL`                | Allowed browser origin for CORS                                         | `http://localhost:5173` |
-| `DATABASE_URL`              | PostgreSQL connection string for local (non-Docker) development         | `postgresql://...`      |
-| `TEST_DATABASE_URL`         | Dedicated test database for Vitest. The name **must** end with `_test`  | `postgresql://...`      |
-| `JWT_SECRET`                | Secret used to sign JWTs. Required, minimum 32 characters               | —                       |
-| `JWT_EXPIRES_IN`            | JWT and cookie lifetime, in `s`/`m`/`h`/`d` units                       | `1h`                    |
-| `AUTH_RATE_LIMIT_WINDOW_MS` | Rate-limit window for auth endpoints, in milliseconds                   | `900000` (15 minutes)   |
-| `AUTH_RATE_LIMIT_MAX`       | Max auth requests per IP within the rate-limit window                   | `20`                    |
-| `POSTGRES_DB`               | Database created by the Docker PostgreSQL service                       | `sweety`                |
-| `POSTGRES_USER`             | Database user created by the Docker PostgreSQL service                  | `sweety`                |
-| `POSTGRES_PASSWORD`         | Database password for Docker and local setup; change this placeholder   | `change_me`             |
-| `POSTGRES_PORT`             | Host port mapped to PostgreSQL's container port `5432`                  | `5432`                  |
-| `SERVER_PORT`               | Host port mapped to the API container's port `5000`                     | `5000`                  |
-| `CLIENT_PORT`               | Host port mapped to the Vite container's port `5173`                    | `5173`                  |
-| `VITE_API_PROXY_TARGET`     | Local Vite proxy target. Compose overrides it with `http://server:5000` | `http://localhost:5000` |
+- `DATABASE_URL` — your local PostgreSQL connection string
+- `JWT_SECRET` — generate with `openssl rand -hex 32`
+- `POSTGRES_PASSWORD` — if using Docker, set a non-placeholder password
 
-Notes:
+---
 
-- The server loads the root `.env` with `dotenv`. Variables injected by Docker Compose take precedence.
-- Generate `JWT_SECRET` with `openssl rand -base64 48`. Never commit a real secret; the server fails
-  fast at startup when `JWT_SECRET` is missing or shorter than 32 characters.
-- `TEST_DATABASE_URL` is only used by Vitest. The test runner refuses to run unless the database name
-  ends with `_test`, so destructive cleanup can never target the development database.
-- Vite's built-in env-file loading is disabled because the server's `NODE_ENV=development` in the
-  shared root file would otherwise force development bundles during `vite build`. The Vite config
-  reads only `VITE_API_PROXY_TARGET` from the root file for its dev proxy; Docker Compose injects that
-  value directly. No client runtime environment variables are needed.
-- `.env` and all `.env.*` files except `.env.example` are ignored by Git and excluded from Docker
-  build contexts.
-- Keep `DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` consistent. Passwords
-  that contain URL-reserved characters must be URL-encoded when placed in `DATABASE_URL`.
-- Docker Compose interpolates `POSTGRES_*` values into the backend's `DATABASE_URL`, using the Compose
-  service hostname `postgres` and internal port `5432`. It also passes `JWT_SECRET` and
-  `JWT_EXPIRES_IN` from the root `.env` into the server container; the server refuses to start when
-  `JWT_SECRET` is missing or too short.
+## Database setup
 
-### Local PostgreSQL setup
-
-If PostgreSQL is installed locally (for example with Homebrew), create a role and database that match
-your `.env`:
+Apply the database migrations before starting the server:
 
 ```bash
-# Start the local service if necessary (Homebrew example)
-brew services start postgresql@18
+npm run db:migrate
+```
 
-# Create a development role and database. Replace the placeholder password.
+This runs Drizzle migrations against the `DATABASE_URL` in `.env`. Both migrations must succeed:
+
+- `0000_dry_stone_men.sql` — creates the `users` table
+- `0001_glossy_layla_miller.sql` — creates the `readings` table and `reading_slot` enum
+
+If PostgreSQL is not installed locally, start it via Docker first:
+
+```bash
+docker compose up -d postgres
+```
+
+then run migrations against `localhost` using the mapped port.
+
+### Local PostgreSQL setup (without Docker)
+
+```bash
+# Create the development role and database
 psql -d postgres -c "CREATE ROLE sweety WITH LOGIN PASSWORD 'change_me';"
 createdb --owner=sweety sweety
 
-# Create a dedicated test role and database for Vitest.
+# Create the dedicated test database for Vitest
 psql -d postgres -c "CREATE ROLE sweety_test WITH LOGIN PASSWORD 'change_me';"
 createdb --owner=sweety_test sweety_test
 ```
 
-If a role or database already exists, skip its command. The default local connection strings are:
+Replace `change_me` with the password you set in `.env`.
 
-```text
-postgresql://sweety:change_me@localhost:5432/sweety       # development
-postgresql://sweety_test:change_me@localhost:5432/sweety_test   # tests
+---
+
+## Seed data
+
+The seed script creates a demo account and approximately 30 days of synthetic glucose readings so
+the application can be evaluated without entering real personal data.
+
+### Enable the seed
+
+The seed requires an explicit opt-in in `.env`:
+
+```dotenv
+SEED_DEMO_DATA=true
 ```
 
-The API validates the environment with Zod at startup and exits with a readable message when required
-variables are missing or malformed. It also checks the database connection before accepting HTTP
-traffic, so local API startup requires a reachable PostgreSQL instance.
+Then run:
 
-## Running locally
+```bash
+npm run db:seed
+```
 
-Start both applications with one command:
+### Demo credentials
+
+| Field    | Value               |
+| -------- | ------------------- |
+| Email    | `demo@sweety.local` |
+| Password | `Demo1234!`         |
+
+### What the seed creates
+
+- One user account with the demo credentials above.
+- Readings for T-1 through T-30 (relative to today in Asia/Kolkata), covering:
+  - Fully completed days (all 4 slots)
+  - Partially completed days (1–3 slots)
+  - Gap days (no readings)
+- Readings spanning both the current month and the previous month, so the MTD and previous-month
+  report pages display meaningful data.
+
+**All generated values are synthetic demonstration data and have no medical significance.**
+
+### Idempotency
+
+The seed is safe to run multiple times:
+
+- If the demo account already exists, it is not modified and the password is never overwritten.
+- Reading inserts use `ON CONFLICT DO NOTHING`, so duplicate rows are silently skipped.
+
+### Safety restrictions
+
+The seed refuses to run unless all conditions are met:
+
+1. `NODE_ENV` is not `production`.
+2. `SEED_DEMO_DATA` is exactly `true`.
+3. The database name in `DATABASE_URL` contains `dev`, `demo`, `local`, or `test`.
+4. No existing data is deleted or truncated.
+
+---
+
+## Running the application
+
+### Host-local development
 
 ```bash
 npm run dev
 ```
 
-This uses `concurrently` and shuts both processes down together.
+Starts both the Express API (port 5000) and the Vite dev server (port 5173) concurrently.
+The Vite server proxies `/api` requests to the Express API.
 
-Start them independently when needed:
+- Frontend: `http://localhost:5173`
+- API health: `http://localhost:5000/api/health`
+
+Start individually when needed:
 
 ```bash
 npm run dev:server   # Express API with tsx watch
 npm run dev:client   # Vite dev server
 ```
 
-Default URLs:
+### Docker Compose
 
-- Frontend: <http://localhost:5173>
-- API health: <http://localhost:5000/api/health>
-- Health through the Vite proxy: <http://localhost:5173/api/health>
+```bash
+docker compose up --build
+```
 
-The Vite dev server proxies `/api` requests to `VITE_API_PROXY_TARGET`, so browser API calls can use
-relative URLs such as `/api/health`.
+Starts three services: `postgres` (PostgreSQL 17), `server` (Express API), and `client` (Vite).
+Services start in dependency order with health checks.
+
+- Frontend: `http://localhost:5173`
+- API health: `http://localhost:5000/api/health`
+- PostgreSQL from host tools: `localhost:5432` (or `POSTGRES_PORT` if overridden)
+
+```bash
+docker compose up -d --build    # run in background
+docker compose logs -f          # follow logs
+docker compose down             # stop (data volume preserved)
+docker compose down -v          # stop and delete database volume (destructive)
+```
 
 ### Port conflicts
 
-macOS AirPlay Receiver commonly listens on port `5000`. If the API cannot bind, set these in `.env`:
+macOS AirPlay Receiver commonly uses port 5000. If the API cannot bind:
 
 ```dotenv
 PORT=5001
 VITE_API_PROXY_TARGET=http://localhost:5001
 ```
 
-For Docker, change only the host mapping with `SERVER_PORT=5001`; the client still reaches the API
-through the internal service name `server:5000`. Local PostgreSQL and another PostgreSQL instance can
-also conflict on `5432`; use `POSTGRES_PORT=5433` for the Docker host mapping if needed.
+For Docker, set only `SERVER_PORT=5001` — the internal port 5000 is unaffected.
+
+---
 
 ## Scripts
 
 ### Root scripts
 
-| Command                      | Description                                              |
-| ---------------------------- | -------------------------------------------------------- |
-| `npm run dev`                | Run API and client concurrently                          |
-| `npm run dev:client`         | Run only the Vite client                                 |
-| `npm run dev:server`         | Run only the Express API in watch mode                   |
-| `npm run build`              | Build both workspaces                                    |
-| `npm run test`               | Run all test suites once                                 |
-| `npm run test:watch`         | Run all test suites in watch mode                        |
-| `npm run typecheck`          | Run TypeScript checks in both workspaces                 |
-| `npm run lint`               | Run ESLint over the repository                           |
-| `npm run lint:fix`           | Run ESLint and apply safe fixes                          |
-| `npm run format`             | Format supported files with Prettier                     |
-| `npm run format:check`       | Check formatting without changing files                  |
-| `npm run db:generate`        | Generate a Drizzle migration from schema changes         |
-| `npm run db:migrate`         | Apply pending Drizzle migrations                         |
-| `npm run db:push`            | Push the schema directly to the database (development)   |
-| `npm run db:studio`          | Open Drizzle Studio                                      |
-| `npm run docker:up`          | Build and start the full Compose stack in the foreground |
-| `npm run docker:up:detached` | Build and start the full Compose stack in the background |
-| `npm run docker:down`        | Stop containers and network, preserving database data    |
-| `npm run docker:logs`        | Follow logs from all Compose services                    |
-| `npm run docker:ps`          | Show Compose service status                              |
+| Command                      | Description                                      |
+| ---------------------------- | ------------------------------------------------ |
+| `npm run dev`                | Start API and client concurrently                |
+| `npm run dev:client`         | Start only the Vite dev server                   |
+| `npm run dev:server`         | Start only the Express API in watch mode         |
+| `npm run build`              | Build both workspaces                            |
+| `npm test`                   | Run all test suites once                         |
+| `npm run test:watch`         | Run test suites in watch mode                    |
+| `npm run typecheck`          | TypeScript check in both workspaces              |
+| `npm run lint`               | ESLint over the repository                       |
+| `npm run lint:fix`           | ESLint with auto-fix                             |
+| `npm run format`             | Prettier write                                   |
+| `npm run format:check`       | Prettier check without writing                   |
+| `npm run db:generate`        | Generate a Drizzle migration from schema changes |
+| `npm run db:migrate`         | Apply pending Drizzle migrations                 |
+| `npm run db:push`            | Push schema to DB directly (development only)    |
+| `npm run db:studio`          | Open Drizzle Studio                              |
+| `npm run db:seed`            | Seed demo account and synthetic readings         |
+| `npm run docker:up`          | Build and start the full Compose stack           |
+| `npm run docker:up:detached` | Build and start in background                    |
+| `npm run docker:down`        | Stop containers (data volume preserved)          |
+| `npm run docker:logs`        | Follow Compose service logs                      |
+| `npm run docker:ps`          | Show Compose service status                      |
 
-### Application scripts
+---
 
-Client:
+## API documentation
 
-| Command              | Description                              |
-| -------------------- | ---------------------------------------- |
-| `npm run dev`        | Start Vite with HMR                      |
-| `npm run build`      | Type-check and create a production build |
-| `npm run preview`    | Preview the production build             |
-| `npm run test`       | Run Vitest once                          |
-| `npm run test:watch` | Run Vitest in watch mode                 |
-| `npm run typecheck`  | Type-check the client                    |
+All API responses use `Content-Type: application/json`. Error responses have the shape:
 
-Server:
-
-| Command              | Description                                |
-| -------------------- | ------------------------------------------ |
-| `npm run dev`        | Start Express with `tsx watch`             |
-| `npm run build`      | Compile TypeScript to `dist/`              |
-| `npm run start`      | Run the compiled server                    |
-| `npm run test`       | Run Vitest and Supertest                   |
-| `npm run test:watch` | Run Vitest in watch mode                   |
-| `npm run typecheck`  | Type-check the server                      |
-| `npm run db:*`       | Drizzle generate, migrate, push, or studio |
-
-Run workspace scripts from the root with npm, for example:
-
-```bash
-npm run dev --workspace @sweety/client
-npm run test --workspace @sweety/server
+```json
+{ "status": "error", "message": "Human-readable message." }
 ```
 
-## API
+Validation errors add a `details` array:
+
+```json
+{
+  "status": "error",
+  "message": "Validation failed.",
+  "details": [{ "path": "fieldName", "message": "Specific message." }]
+}
+```
 
 ### Health
 
@@ -314,38 +482,29 @@ npm run test --workspace @sweety/server
 GET /api/health
 ```
 
-Successful response:
+Response `200`:
 
 ```json
-{
-  "status": "ok",
-  "message": "Sweety API is running"
-}
+{ "status": "ok", "message": "Sweety API is running" }
 ```
 
 ### Authentication
 
-| Method | Endpoint             | Auth required | Description                                  |
-| ------ | -------------------- | ------------- | -------------------------------------------- |
-| POST   | `/api/auth/register` | No            | Create an account and start a session        |
-| POST   | `/api/auth/login`    | No            | Authenticate and start a session             |
-| GET    | `/api/auth/me`       | Yes           | Return the authenticated user's safe profile |
-| POST   | `/api/auth/logout`   | No            | Clear the session cookie (idempotent)        |
+| Method | Endpoint             | Auth required | Description                           |
+| ------ | -------------------- | ------------- | ------------------------------------- |
+| `POST` | `/api/auth/register` | No            | Create account and start session      |
+| `POST` | `/api/auth/login`    | No            | Authenticate and start session        |
+| `GET`  | `/api/auth/me`       | Yes           | Return the authenticated user profile |
+| `POST` | `/api/auth/logout`   | No            | Clear the session cookie              |
 
-#### Register
+#### POST /api/auth/register
 
-```http
-POST /api/auth/register
-Content-Type: application/json
-
-{
-  "name": "Demo User",
-  "email": "demo@example.com",
-  "password": "SecurePassword123"
-}
+```json
+{ "name": "Demo User", "email": "demo@example.com", "password": "SecurePassword123" }
 ```
 
-`201 Created` — returns a safe user (never a password hash) and sets the auth cookie:
+`201 Created` — returns a safe user (never includes the password hash) and sets the
+`sweety_access_token` HTTP-only cookie:
 
 ```json
 {
@@ -357,103 +516,49 @@ Content-Type: application/json
 }
 ```
 
-Errors:
+Errors: `400` for validation failures (name required, valid email, password ≥ 8 characters);
+`409` when the email is already registered.
 
-- `400` with `details` listing per-field validation errors (name required, valid email, password of
-  at least 8 characters).
-- `409` when the email is already registered (case-insensitive): "An account with this email already
-  exists."
+#### POST /api/auth/login
 
-#### Login
-
-```http
-POST /api/auth/login
-Content-Type: application/json
-
-{
-  "email": "demo@example.com",
-  "password": "SecurePassword123"
-}
+```json
+{ "email": "demo@example.com", "password": "SecurePassword123" }
 ```
 
-`200 OK` — same safe user shape as register, and sets the auth cookie.
+`200 OK` — same user shape as register, sets the auth cookie.
 
-Errors: `401` with the generic message "Invalid email or password." for both a wrong password and a
-non-existent email, so account existence is never revealed.
+Errors: `401 "Invalid email or password."` for wrong password or unknown email (generic message
+to prevent user enumeration). `429` when rate-limited.
 
-#### Current user
+#### GET /api/auth/me
 
-```http
-GET /api/auth/me
-```
+Requires the `sweety_access_token` cookie. Returns the authenticated user; `401` if the cookie
+is missing, invalid, or expired.
 
-Requires a valid auth cookie. `200 OK` returns the safe user; `401` returns
-"Authentication required." when the cookie is missing, invalid, or expired.
+#### POST /api/auth/logout
 
-#### Logout
-
-```http
-POST /api/auth/logout
-```
-
-`200 OK` clears the auth cookie with the same options used to set it. It is safe to call while
-already logged out.
+`200 OK`. Clears the auth cookie with matching options. Safe to call when already logged out.
 
 ### Blood glucose readings
 
-All reading endpoints require authentication (HTTP 401 otherwise) and always operate on the
-authenticated user's data; a user ID from the request body is never trusted.
+All reading endpoints require authentication (`401` otherwise). Readings always belong to the
+authenticated user; a user ID in the request body is never trusted.
 
-| Method | Endpoint            | Description                                         |
-| ------ | ------------------- | --------------------------------------------------- |
-| POST   | `/api/readings`     | Create a reading                                    |
-| GET    | `/api/readings`     | List the user's readings with optional date filters |
-| GET    | `/api/readings/:id` | Retrieve one of the user's readings                 |
-| PATCH  | `/api/readings/:id` | Update one of the user's readings                   |
-| DELETE | `/api/readings/:id` | Delete one of the user's readings                   |
+| Method   | Endpoint            | Description                           |
+| -------- | ------------------- | ------------------------------------- |
+| `POST`   | `/api/readings`     | Create a reading                      |
+| `GET`    | `/api/readings`     | List readings (optional date filters) |
+| `GET`    | `/api/readings/:id` | Retrieve one reading                  |
+| `PATCH`  | `/api/readings/:id` | Update one reading                    |
+| `DELETE` | `/api/readings/:id` | Delete one reading                    |
 
-#### Reading data model
+#### POST /api/readings
 
-| Column         | Type                       | Constraints                                                          |
-| -------------- | -------------------------- | -------------------------------------------------------------------- |
-| `id`           | `uuid`                     | Primary key, PostgreSQL-generated                                    |
-| `user_id`      | `uuid`                     | Foreign key to `users.id`, `ON DELETE CASCADE`                       |
-| `reading_date` | `date` (date-only)         | Not null; stored as `YYYY-MM-DD` internally, API speaks `DD-MM-YYYY` |
-| `slot`         | enum `reading_slot`        | `morning`, `after_breakfast`, `after_lunch`, `after_dinner`          |
-| `value`        | `integer`                  | Not null; `CHECK (value BETWEEN 40 AND 600)` (mg/dl)                 |
-| `created_at`   | `timestamp with time zone` | Not null, defaults to `now()`                                        |
-| `updated_at`   | `timestamp with time zone` | Not null, defaults to `now()`                                        |
-
-Database constraints:
-
-- Unique index on `(user_id, reading_date, slot)` — one reading per slot per day per user.
-- Regular index on `(user_id, reading_date)` for the daily/list queries.
-- Check constraint on the value range as a second line of defense behind Zod validation.
-
-#### Supported slots
-
-| Slot value        | Label used in messages |
-| ----------------- | ---------------------- |
-| `morning`         | Morning (fasting)      |
-| `after_breakfast` | After breakfast        |
-| `after_lunch`     | After lunch            |
-| `after_dinner`    | After dinner           |
-
-#### Create a reading
-
-```http
-POST /api/readings
-Content-Type: application/json
-Cookie: sweety_access_token=...
-
-{
-  "readingDate": "12-11-2026",
-  "slot": "morning",
-  "value": 105
-}
+```json
+{ "readingDate": "12-11-2026", "slot": "morning", "value": 105 }
 ```
 
-`201 Created` returns the reading:
+`201 Created`:
 
 ```json
 {
@@ -467,77 +572,37 @@ Cookie: sweety_access_token=...
 }
 ```
 
-Validation errors return `400` with `details` of `{ path, message }` items. The fixed messages are:
+`readingDate` format: `DD-MM-YYYY`. Valid slots: `morning`, `after_breakfast`, `after_lunch`,
+`after_dinner`. Value range: 40–600 (integer). Dates may not be in the future (Asia/Kolkata).
 
-- `Please enter a glucose value.` — value missing or not a number.
-- `Value must be between 40 and 600 mg/dl.` — below 40, above 600, or not a whole number.
-- `Date cannot be in the future.` — the calendar date is after today.
-- `Please enter a valid date in DD-MM-YYYY format.` — wrong shape or not a real calendar date.
-- `Slot must be one of morning, after_breakfast, after_lunch, or after_dinner.`
+Errors: `400` for validation; `409` for duplicate slot on the same date, or a fifth reading on
+the same day.
 
-Conflict errors return `409`:
-
-- `You already have a Morning (fasting) reading for this date.` (or `an After breakfast reading`,
-  etc.) — duplicate slot for the same date.
-- `You can add only 4 readings per day.` — a fifth reading for the same day.
-
-#### List readings
+#### GET /api/readings
 
 ```http
-GET /api/readings                     # all readings, newest first
-GET /api/readings?date=12-11-2026     # a single day
+GET /api/readings                           # all readings, newest first
+GET /api/readings?date=12-11-2026          # single day
 GET /api/readings?from=01-11-2026&to=10-11-2026
 ```
 
-Rules:
+Results sorted by `readingDate` descending, then slot order.
 
-- `date` cannot be combined with `from` or `to` (400).
-- `from` must not be later than `to` (400).
-- All filter dates must be valid calendar dates and may not be in the future (400).
-- Results sort by `readingDate` descending, then slot order: morning, after_breakfast,
-  after_lunch, after_dinner.
+#### PATCH /api/readings/:id
 
-#### Update a reading
-
-```http
-PATCH /api/readings/:id
-Content-Type: application/json
-
-{ "value": 130 }
-```
-
-All fields are optional but at least one is required (`400` otherwise). The same validation rules
-as creation apply to updated fields, and a change that would collide with another slot on the same
-date returns `409`. Nonexistent or foreign-owned readings return `404` with
-`Reading not found.` — foreign data is never revealed.
-
-#### Delete a reading
-
-```http
-DELETE /api/readings/:id
-```
-
-`200 OK` with `{ "status": "ok", "message": "Reading deleted successfully." }`. Nonexistent or
+At least one field required. Supports `value`, `slot`, and `readingDate`. Nonexistent or
 foreign-owned readings return `404`.
 
-#### Date and timezone handling
+#### DELETE /api/readings/:id
 
-The API speaks **DD-MM-YYYY**: request bodies and query filters accept it, and every response
-returns `readingDate` in that form. Internally the value is stored and compared as a PostgreSQL
-`DATE` (`YYYY-MM-DD`), converted deterministically at the API boundary with pure string arithmetic —
-it is never routed through a JavaScript timestamp, so no timezone can shift the calendar day.
-"Today" for the future-date rule is determined in **Asia/Kolkata** (the assignment timezone
-convention), so a reading entered after midnight UTC, for example, still belongs to the correct
-local day.
+`200 OK` — `{ "status": "ok", "message": "Reading deleted successfully." }`. Nonexistent or
+foreign-owned readings return `404`.
 
-### Blood glucose reports
+### Reports
 
-All report endpoints require the authentication cookie and always operate on the authenticated
-user's own readings — other users' data is excluded by the database query itself, never by
-post-filtering. All report dates in requests and responses are **DD-MM-YYYY**. The project's
-response convention is a bare JSON object (no `status: 'success'` wrapper).
+All report endpoints require authentication. All dates in requests and responses use `DD-MM-YYYY`.
 
-Every report summary has the same shape:
+Report summary shape:
 
 ```json
 {
@@ -548,23 +613,15 @@ Every report summary has the same shape:
 }
 ```
 
-- `highest`/`lowest`/`average` are `null` (never `0`) when the period has no readings, so an empty
-  report cannot be mistaken for recorded measurements.
-- `average` is the mean of all **individual** readings in the period — never an average of daily
-  averages — rounded to exactly one decimal place (`121.44 → 121.4`, `121.46 → 121.5`) and returned
-  as a JSON number.
-- Aggregates for period reports are computed in PostgreSQL (`MAX`, `MIN`, `AVG`, `COUNT` through
-  Drizzle) over the `(user_id, reading_date)` index in a single query.
+`highest`, `lowest`, and `average` are `null` (never `0`) when the period has no readings.
 
-#### Daily report
+#### GET /api/reports/daily
 
 ```http
 GET /api/reports/daily?date=12-11-2026
 ```
 
-Returns the day's readings in slot order (morning, after_breakfast, after_lunch, after_dinner) plus
-the summary. The `date` parameter is required and follows the same validation rules as readings:
-real calendar date, not in the future.
+Returns slot-ordered readings plus a summary:
 
 ```json
 {
@@ -572,25 +629,21 @@ real calendar date, not in the future.
   "date": "12-11-2026",
   "summary": { "highest": 145, "lowest": 95, "average": 122.0, "totalReadings": 4 },
   "readings": [
-    { "id": "…", "readingDate": "12-11-2026", "slot": "morning", "value": 95 },
-    { "id": "…", "readingDate": "12-11-2026", "slot": "after_breakfast", "value": 145 },
-    { "id": "…", "readingDate": "12-11-2026", "slot": "after_lunch", "value": 130 },
-    { "id": "…", "readingDate": "12-11-2026", "slot": "after_dinner", "value": 118 }
+    { "id": "...", "readingDate": "12-11-2026", "slot": "morning", "value": 95 },
+    { "id": "...", "readingDate": "12-11-2026", "slot": "after_breakfast", "value": 145 }
   ]
 }
 ```
 
-An empty day returns `200` with `summary: { highest: null, lowest: null, average: null,
-totalReadings: 0 }` and `readings: []` — never a `404`.
+Empty days return `200` with `null` aggregates and `readings: []`.
 
-#### Month-to-date report
+#### GET /api/reports/month-to-date
 
 ```http
 GET /api/reports/month-to-date?date=12-11-2026
 ```
 
-Aggregates from the first day of the selected month through the selected date, both boundaries
-inclusive. Readings after the selected date and readings from earlier months are excluded.
+Aggregates from the first of the selected month through the selected date:
 
 ```json
 {
@@ -600,15 +653,9 @@ inclusive. Readings after the selected date and readings from earlier months are
 }
 ```
 
-#### Previous month report
+#### GET /api/reports/monthly
 
-```http
-GET /api/reports/monthly
-```
-
-No query parameter. The period is the entire calendar month before the current date, determined in
-**Asia/Kolkata**. January correctly resolves to December of the previous year, and leap-year
-February (29 days) is handled by date arithmetic rather than hardcoded month lengths.
+No query parameter. Period is the full previous calendar month (determined in Asia/Kolkata):
 
 ```json
 {
@@ -618,520 +665,200 @@ February (29 days) is handled by date arithmetic rather than hardcoded month len
 }
 ```
 
-#### Report errors
+---
 
-- Missing, malformed, impossible, or future `date` → `400` with
-  `details: [{ "path": "date", "message": … }]`, using the same messages as the readings endpoints.
-- Missing, invalid, or expired cookie → `401 { "status": "error", "message": "Authentication
-required." }`.
+## Testing
 
-Unknown routes return a JSON `404` response. The Express application is exported from `app.ts` and is
-importable without starting a listener, which allows Supertest to exercise it directly. `server.ts`
-owns database startup checks, HTTP listening, and graceful shutdown on `SIGINT`/`SIGTERM`.
-
-## Authentication flow
-
-1. **Register or login.** The server validates input with Zod (email is trimmed and lowercased),
-   hashes passwords with `bcryptjs` (cost factor 12), and stores the user.
-2. **Token issuance.** On success the server signs a minimal JWT (HS256, subject = user ID) using
-   `JWT_SECRET` and sets it in the HTTP-only cookie `sweety_access_token`.
-3. **Authenticated requests.** The browser automatically sends the cookie. The `requireAuth`
-   middleware verifies the signature, expiration, and subject (it must be a UUID) and attaches
-   `authenticatedUserId` to the request. The server never trusts a user ID from the request body.
-4. **Current user.** `GET /api/auth/me` loads the user by the verified ID and returns the safe
-   profile.
-5. **Logout.** The server clears the cookie with matching options.
-
-### Cookie behavior
-
-The cookie `sweety_access_token` is set with:
-
-- `httpOnly: true` — not readable by JavaScript.
-- `sameSite: 'lax'` — sent on top-level navigations and same-site requests.
-- `secure: true` in production only (plain HTTP is allowed during local development).
-- `path: '/'` and a `maxAge` that always matches `JWT_EXPIRES_IN`, both when setting and clearing.
-
-The frontend never stores tokens in `localStorage` or `sessionStorage`. All API calls are same-origin
-relative `/api/...` requests (through the Vite dev proxy in development) with
-`credentials: 'include'`, and CORS on the server is configured with `credentials: true` for the
-allowed `CLIENT_URL`.
-
-### Security decisions and limitations
-
-- Passwords are hashed with bcrypt cost 12; plaintext passwords and password hashes are never
-  returned by any endpoint.
-- Login failures use a single generic message to avoid user enumeration.
-- Duplicate registrations return `409`, which does reveal that an email exists on the register
-  endpoint (an inherent trade-off of the UX requirement to tell users the email is taken).
-- JWTs carry only `sub` (the user ID) plus the standard claims; they are verified with the configured
-  algorithm and a UUID subject check.
-- **CSRF:** HTTP-only cookies mitigate XSS token theft but do **not** by themselves eliminate CSRF.
-  `SameSite=Lax` blocks most cross-site POST attacks from other origins, and the API currently
-  accepts only JSON bodies, which browsers cannot submit cross-site with a simple form. Still,
-  defenses such as a CSRF token, `Origin`/`Referer` checking, or `SameSite=Strict` should be
-  considered before exposing state-changing endpoints to other origins or relaxing the JSON-only
-  body requirement.
-- There is no refresh-token rotation or revocation list; a stolen cookie remains valid until
-  `JWT_EXPIRES_IN` elapses.
-
-### Rate limiting
-
-`POST /api/auth/register` and `POST /api/auth/login` are rate limited with `express-rate-limit`
-(per-IP). Defaults are **20 requests per 15 minutes**, configurable through `AUTH_RATE_LIMIT_MAX`
-and `AUTH_RATE_LIMIT_WINDOW_MS`. Exceeding the limit returns HTTP `429` with the standard error
-shape:
-
-```json
-{
-  "status": "error",
-  "message": "Too many requests. Please try again later."
-}
-```
-
-The limiter is applied only to these two endpoints — logout and `/me` are not throttled — and is
-disabled while `NODE_ENV=test` so the integration tests stay deterministic. It keeps counters in
-**process memory**, which is suitable for this single-instance deployment: limits are per instance
-and reset on restart. A multi-instance production deployment would need a shared store (for example
-Redis) for consistent limits, which is intentionally out of scope here.
-
-## Database and Drizzle
-
-- `apps/server/src/database/index.ts` creates the `pg` pool and Drizzle client.
-- `apps/server/src/database/schema.ts` defines the `users` table:
-
-| Column          | Type                       | Constraints                         |
-| --------------- | -------------------------- | ----------------------------------- |
-| `id`            | `uuid`                     | Primary key, PostgreSQL-generated   |
-| `name`          | `varchar(120)`             | Not null                            |
-| `email`         | `varchar(255)`             | Not null, unique case-insensitively |
-| `password_hash` | `varchar(255)`             | Not null (bcrypt hash)              |
-| `created_at`    | `timestamp with time zone` | Not null, defaults to `now()`       |
-| `updated_at`    | `timestamp with time zone` | Not null, defaults to `now()`       |
-
-Case-insensitive uniqueness is enforced in the database with
-`CREATE UNIQUE INDEX users_email_unique_index ON users (lower(email))`, so `Demo@Example.com` and
-`demo@example.com` cannot both register. The schema is ready for a future `readings` table with a
-foreign key to `users`.
-
-- `apps/server/drizzle.config.ts` reads `DATABASE_URL` from the root `.env`.
-- Generated migrations belong in `apps/server/drizzle/` and are committed to the repository.
-
-Typical workflow after the schema is changed:
+### Run the test suite
 
 ```bash
-npm run db:generate   # create SQL migration from schema.ts
-npm run db:migrate    # apply it to the database in DATABASE_URL
-npm run db:studio     # inspect data in Drizzle Studio
-```
-
-`npm run db:push` is available for rapid development but should not replace reviewed migrations in
-shared environments.
-
-Vitest applies the committed migrations to `TEST_DATABASE_URL` in its global setup before any test
-runs, so the test database always matches the schema in the repository.
-
-To run Drizzle commands against the Docker database from the host, point `DATABASE_URL` at the mapped
-host port (`localhost:5433` if you changed `POSTGRES_PORT`) using the Compose credentials.
-
-## Docker development
-
-Docker Compose runs the full stack with hot reload:
-
-| Service    | Build / image            | Host port                | Internal address |
-| ---------- | ------------------------ | ------------------------ | ---------------- |
-| `client`   | `apps/client/Dockerfile` | `${CLIENT_PORT:-5173}`   | `client:5173`    |
-| `server`   | `apps/server/Dockerfile` | `${SERVER_PORT:-5000}`   | `server:5000`    |
-| `postgres` | `postgres:17-alpine`     | `${POSTGRES_PORT:-5432}` | `postgres:5432`  |
-
-Start the stack:
-
-```bash
-# From the repository root, after creating .env
-docker compose up --build
-```
-
-Or in the background:
-
-```bash
-docker compose up -d
-docker compose ps
-docker compose logs -f
-```
-
-Open:
-
-- Frontend: <http://localhost:5173>
-- Backend health: <http://localhost:5000/api/health>
-- Browser-facing proxied health: <http://localhost:5173/api/health>
-- PostgreSQL from host tools: `localhost:5432` (unless overridden by `POSTGRES_PORT`)
-
-The client container's Vite server binds to `0.0.0.0` and proxies `/api` to `http://server:5000` over
-the dedicated `sweety-network` bridge network. The backend reaches PostgreSQL at
-`postgres:5432`; its `DATABASE_URL` is constructed by Compose and overrides any local value.
-
-### Health checks and startup order
-
-- PostgreSQL uses `pg_isready` and is marked healthy before the backend starts.
-- The backend waits for PostgreSQL's health check and exposes a health check against `/api/health`.
-- The frontend starts after the backend is healthy.
-- `docker compose ps` shows the health state of all services.
-
-### Hot reload and dependencies
-
-Only each application's `src/` directory is bind-mounted:
-
-- Server changes restart `tsx watch`.
-- Client changes refresh through Vite HMR.
-- `node_modules` is **not** bind-mounted; dependencies installed inside the image are preserved.
-- Rebuild after changing `package.json`, `package-lock.json`, a Dockerfile, `index.html`, Vite config,
-  or root TypeScript config:
-
-```bash
-docker compose up -d --build
-```
-
-Application containers run as the non-root `node` user (UID 1000). The official PostgreSQL image
-manages its own internal user. `.env` files and secrets are excluded from the build context by
-`.dockerignore`.
-
-### Stop, reset, and persistence
-
-```bash
-docker compose down
-```
-
-This stops and removes containers and the network, but **keeps** the named volume
-`sweety_postgres_data`. PostgreSQL data survives container restarts and `docker compose down`, and is
-reused on the next `docker compose up`.
-
-```bash
-docker compose down -v
-```
-
-> **Warning:** `-v` / `--volumes` also removes the named database volume. All data in the Docker
-> PostgreSQL database is permanently deleted. No project script runs this automatically.
-
-Use `down -v` only when you intentionally want a clean database. To verify persistence manually:
-write data, run `docker compose down`, run `docker compose up -d` again, and query the data. The volume
-can be inspected with:
-
-```bash
-docker volume inspect sweety_postgres_data
-```
-
-### Docker troubleshooting
-
-- **Port 5000 already in use:** macOS AirPlay commonly uses it. Set `SERVER_PORT=5001` in `.env`; the
-  container still listens on 5000 and the Vite proxy is unaffected.
-- **Port 5432 already in use:** a local PostgreSQL instance is running. Set `POSTGRES_PORT=5433` in
-  `.env`; container-to-container connections still use `postgres:5432`.
-- **Stale dependencies after a lockfile change:** rebuild with `docker compose up -d --build`.
-- **View a failing service:** `docker compose logs <client|server|postgres>`.
-- **Reset everything including data:** `docker compose down -v` (destructive; see warning above).
-
-## Quality checks
-
-```bash
-npm run format:check
-npm run lint
-npm run typecheck
 npm test
-npm run build
 ```
 
-The current tests cover:
+Runs all test suites in both workspaces (Vitest, React Testing Library, Supertest).
 
-- The Express health endpoint with Supertest.
-- The placeholder page with React Testing Library.
-- The full authentication flow against the real HTTP app and the dedicated PostgreSQL test database:
-  registration (including password-hash verification in the database), case-insensitive duplicate
-  emails, validation errors, login (success, wrong password, non-existent email), `/me` with valid,
-  missing, invalid, and expired tokens, and logout cookie clearing.
-- The blood glucose readings CRUD flow against the real HTTP app and test database: authentication
-  on every endpoint, creation validation (range, decimals, slots, calendar dates, future dates,
-  duplicates, daily limit), multi-user ownership, listing with date/range filters and sorting,
-  retrieval, updates (partial, conflicts, ownership), deletion, and the database check/cascade
-  constraints.
-
-Test files run sequentially (`fileParallelism: false`) because all suites share one PostgreSQL test
-database; parallel files would otherwise truncate each other's fixtures.
-
-## Testing setup
-
-Backend tests require a dedicated PostgreSQL test database configured through `TEST_DATABASE_URL`.
-The database name must end with `_test`; the runner throws an error otherwise, so destructive test
-cleanup (`TRUNCATE TABLE users`) can never target the development database.
+### Individual quality checks
 
 ```bash
-# Configure in .env, then run:
-npm test --workspace @sweety/server
+npm run typecheck       # TypeScript strict check in both workspaces
+npm run lint            # ESLint
+npm run format:check    # Prettier formatting check
+npm run build           # Production build for both workspaces
 ```
 
-Vitest's global setup applies the committed Drizzle migrations to the test database before tests run.
-Tests exercise the real Express application and database — they are not mocked at the HTTP or data
-layers.
+### Test database requirement
+
+Server tests require `TEST_DATABASE_URL` to be set in `.env`. The database name **must** end with
+`_test`; the test runner throws if it does not, preventing destructive cleanup from targeting any
+other database.
+
+Vitest's global setup applies committed Drizzle migrations to the test database before any test
+runs, so the test schema always matches the repository.
+
+### What is tested
+
+- Express health endpoint
+- Full authentication flow (register, login, `/me`, logout) with real HTTP + PostgreSQL
+- Password hash verification in the database
+- Case-insensitive duplicate email detection
+- JWT middleware (missing, invalid, expired, wrong algorithm tokens)
+- Complete readings CRUD: creation validation (range, slots, dates, duplicates, daily limit),
+  multi-user ownership isolation, list filtering, sorting, update conflicts, deletion, cascade
+  constraints
+- Reports: daily, month-to-date, previous-month — authentication, validation, known-value
+  aggregation, rounding, two-user isolation
+- Client routing and redirects
+- Client date conversion utilities
+- Reading form dialog behaviour
+- HTTP error handling
+
+Test counts: see CI output for current results.
+
+---
+
+## Security considerations
+
+### What is in place
+
+- **bcrypt password hashing** — cost factor 12; plaintext passwords never stored or returned
+- **HTTP-only cookies** — the JWT is not accessible to browser JavaScript
+- **`SameSite=Lax`** — mitigates most cross-site POST attacks
+- **`Secure` flag** — set in production (cookie only sent over HTTPS)
+- **JWT with minimal claims** — only `sub` (user UUID) plus standard expiry; subject validated to
+  be a UUID
+- **Ownership enforcement** — every read/update/delete filters by both record ID and user ID; a
+  foreign record returns `404`, not `403`, to avoid confirming existence
+- **Rate limiting** — registration and login endpoints limited to 20 requests per 15 minutes per IP
+- **Helmet** — sets standard security HTTP response headers
+- **CORS** — restricted to `CLIENT_URL`; `credentials: true`
+- **Zod validation** — all inputs validated at the API boundary before touching the database
+- **Parameterised queries** — Drizzle ORM uses parameterised SQL; no raw string concatenation
+
+### Known limitations
+
+- **No CSRF token** — `SameSite=Lax` and JSON-only bodies reduce exposure, but a dedicated CSRF
+  token or `SameSite=Strict` should be added before production
+- **No token revocation** — a stolen cookie remains valid until `JWT_EXPIRES_IN` elapses; a
+  revocation list or refresh-token rotation would address this
+- **In-memory rate limiting** — counters reset on restart and are not shared across instances; not
+  suitable for multi-instance deployments without a shared store (e.g. Redis)
+- **Register reveals email existence** — `409` on duplicate registration is an inherent UX
+  trade-off
+- **Dockerfiles target development** — `tsx watch` and Vite HMR are not suitable for production;
+  a production deployment would require a proper web server and static file serving setup
+
+---
+
+## Assumptions and limitations
+
+- npm is used throughout; Bun is not installed or required.
+- The application timezone is **Asia/Kolkata**. "Today" for future-date validation and report
+  period calculation is determined in this timezone. `APP_TIMEZONE` in
+  `apps/server/src/utils/date.ts` is the single place to change it.
+- Readings are not paginated — the list is naturally small for personal use.
+- The daily-limit check is count-then-insert; two simultaneous creates for the same day could
+  theoretically land a fifth reading (the unique slot index still prevents duplicates).
+- Authentication cookies are only `Secure` in production. Local development over plain HTTP is
+  intentional and expected.
+- The `GET /api/health` endpoint returns `200` after a successful database connection check at
+  startup; it does not query the database on every request.
+- Doctor roles, reminders, notifications, exports, and pagination are intentionally out of scope.
+
+---
 
 ## Design system
 
-The client has a warm, calm health-tech identity: **cream background, dark olive typography**.
+The client uses a warm, calm health-tech identity: **cream background, dark olive typography**.
 
-| Token        | Value     | Use                                                                          |
-| ------------ | --------- | ---------------------------------------------------------------------------- |
-| `cream`      | `#F6F3E9` | Page background                                                              |
-| `surface`    | `#FFFEF8` | Cards, inputs                                                                |
-| `ink`        | `#343D27` | Primary text, values                                                         |
-| `ink-soft`   | `#6A7058` | Secondary text (darkened from the original `#777C68` to pass 4.5:1 on cream) |
-| `olive`      | `#596747` | Interactive accents, chart bars                                              |
-| `olive-dark` | `#343F2B` | Primary buttons, active nav, brand                                           |
-| `sage`       | `#DCE3D3` | Filled/selected states                                                       |
-| `beige`      | `#EAE4D4` | Empty-slot surfaces                                                          |
-| `line`       | `#E4E0D3` | 1px borders                                                                  |
-| `terracotta` | `#C98568` | Destructive actions and small accents only                                   |
+| Token        | Value     | Use                                       |
+| ------------ | --------- | ----------------------------------------- |
+| `cream`      | `#F6F3E9` | Page background                           |
+| `surface`    | `#FFFEF8` | Cards, inputs                             |
+| `ink`        | `#343D27` | Primary text, values                      |
+| `ink-soft`   | `#6A7058` | Secondary text (≥4.5:1 contrast on cream) |
+| `olive`      | `#596747` | Interactive accents, chart bars           |
+| `olive-dark` | `#343F2B` | Primary buttons, active nav, brand        |
+| `sage`       | `#DCE3D3` | Filled/selected states                    |
+| `beige`      | `#EAE4D4` | Empty-slot surfaces                       |
+| `line`       | `#E4E0D3` | 1 px borders                              |
+| `terracotta` | `#C98568` | Destructive actions and small accents     |
 
-Tokens live in `@theme` in `apps/client/src/index.css` (Tailwind v4 CSS-first configuration) and are
-consumed as standard Tailwind colour utilities (`bg-cream`, `text-ink`, `border-line`, …).
+Tokens live in `@theme` in `apps/client/src/index.css` (Tailwind v4 CSS-first configuration).
 
-Typography is **Instrument Sans** (Google Fonts, one family, 400–700). Headings use tight tracking;
-every numeric value — readings, averages, counts — uses tabular numerals (`tabular-nums`) so
-columns and comparisons stay aligned. Rules of thumb: 1px borders for elevation (soft shadows only
-on the modal layer), 12–16px radii, no gradient text, no glass effects, no decorative illustrations.
+Typography: **Instrument Sans** (Google Fonts, 400–700). Numeric values use `tabular-nums`.
 
-Motion is `motion/react` (the modern Framer Motion package), used only where CSS transitions are
-insufficient: page entrance, dialog enter/exit (200 ms ease-out, scale 0.97), report-tab crossfade,
-and one stagger-free dashboard entrance. Hover/press feedback is plain CSS. `prefers-reduced-motion`
-is honoured both globally (CSS) and in Motion (`useReducedMotion`).
+Motion: `motion/react` for page entrance, dialog open/close (200 ms ease-out, scale 0.97), and
+report-tab crossfade. `prefers-reduced-motion` is honoured globally (CSS) and in component logic
+(`useReducedMotion`).
 
-## Phase scope
+---
 
-### Phase 0 (foundation)
+## Project phases
 
-Included:
+### Phase 0 — Foundation
 
-- npm workspaces and shared strict TypeScript configuration
-- React + TypeScript + Vite + Tailwind + React Router frontend foundation
-- Express + TypeScript backend foundation with security headers, CORS, and JSON parsing
-- Zod environment validation
-- PostgreSQL connection and Drizzle client initialization
-- `/api/health`, graceful shutdown, and backend tests
-- Docker Compose development environment with persistence and health checks
-- Documentation and code-quality tooling
+npm workspaces, shared TypeScript configuration, React + Vite + Tailwind client skeleton, Express
+backend with Helmet/CORS/JSON parsing, Zod environment validation, PostgreSQL connection, Drizzle
+client, `/api/health` endpoint, graceful shutdown, Docker Compose with health checks, ESLint,
+Prettier, and initial test scaffolding.
 
-### Phase 1 (authentication and user foundation)
+### Phase 1 — Authentication and user foundation
 
-Included:
+`users` table with case-insensitive email uniqueness, Zod-validated register/login/me/logout
+endpoints, bcrypt hashing (cost 12), HS256 JWT in an HTTP-only cookie, `requireAuth` middleware,
+in-memory rate limiting, typed frontend auth API client, integration tests.
 
-- `users` table with a case-insensitive unique email index and a committed Drizzle migration
-- Zod-validated registration, login, current-user, and logout endpoints
-- bcrypt password hashing (cost 12) and HS256 JWT signing
-- HTTP-only cookie token transport with `requireAuth` middleware
-- In-memory rate limiting on register and login endpoints
-- Typed frontend auth API client (`registerUser`, `loginUser`, `logoutUser`, `getCurrentUser`)
-- Integration tests against a dedicated `_test` database
+### Phase 2 — Blood glucose readings
 
-### Phase 1 implementation notes
+`readings` table (date-only, slot enum, value check constraint, unique per user/date/slot, cascade
+delete), authenticated CRUD endpoints with ownership on every query, Zod validation with friendly
+messages, date-only storage in `YYYY-MM-DD` with `DD-MM-YYYY` API surface, typed frontend
+readings API client, comprehensive integration tests.
 
-- **Token transport.** JWTs live only in the HTTP-only `sweety_access_token` cookie
-  (`sameSite: 'lax'`, `secure` in production, `maxAge` always matching `JWT_EXPIRES_IN`). They are
-  never returned in JSON bodies and never stored in web storage. Logout clears the cookie with the
-  same identity/security attributes minus `maxAge`.
-- **JWT shape.** HS256 only (signing and verification), payload limited to `sub` (user UUID),
-  verified with `JWT_SECRET` (Zod-enforced, ≥32 characters). The middleware rejects missing,
-  invalid, expired, or foreign-algorithm tokens with a single generic 401.
-- **Passwords.** bcrypt cost 12. Plaintext and hashes never appear in any API response.
-- **User enumeration.** Login returns one generic message for wrong password and unknown email.
-  Registration returns `409` for duplicates, which inherently reveals that an email exists.
-- **Rate limiting.** Register and login are limited per IP (default 20 requests / 15 minutes,
-  configurable via `AUTH_RATE_LIMIT_*`). Counters are in process memory — suitable for this
-  single-instance deployment, not for multi-instance production. The limiter is skipped while
-  `NODE_ENV=test` so integration tests stay deterministic; its 429 behavior is covered by dedicated
-  tests against the exported factory.
-- **Test safety.** Vitest requires `TEST_DATABASE_URL` whose database name ends with `_test`;
-  destructive cleanup refuses to run against anything else. Global setup applies the committed
-  migrations to the test database before any test runs.
-- **Known limitations.** No CSRF token (mitigated by `SameSite=Lax` and JSON-only bodies, still a
-  documented gap), no refresh-token rotation or revocation, and no login/register UI yet — only the
-  typed API client.
+### Phase 3 — Report generation and analytics
 
-### Phase 2 (blood glucose readings)
+Daily, month-to-date, and previous-month report endpoints; PostgreSQL aggregation; correct
+boundary math for January → December rollover and leap-year February; injectable date-range
+helpers with unit tests; typed frontend reports API client.
 
-Included:
+### Phase 4 — Frontend implementation and visual design
 
-- `readings` table (date-only reading date, slot enum, value check constraint, unique per
-  user/date/slot, cascade delete) with a committed Drizzle migration
-- Authenticated CRUD endpoints for readings with ownership enforced on every query
-- Zod validation with friendly fixed messages, including date-only and Asia/Kolkata "today" logic
-- Typed frontend readings API client (`createReading`, `listReadings`, `getReading`,
-  `updateReading`, `deleteReading`)
-- Comprehensive integration tests for CRUD, ownership, filters, sorting, and constraints
+React 19 single-page application: landing page, auth screens, authenticated dashboard, readings
+history, reports page with bar charts; cream/olive design system; Motion animations;
+`prefers-reduced-motion` support; responsive layout; client unit tests.
 
-Intentionally not included:
+### Phase 5 — Testing and hardening
 
-- Login/register UI screens or dashboard/charts UI (only the typed API clients exist)
-- Daily/monthly reports or report calculations
-- Doctor roles, reminders, notifications
-- Redis, BullMQ, background jobs, refresh-token rotation, or Docker production deployment
-- CI/CD pipelines
-- Pagination (no existing convention requires it yet)
+148 passing tests across 9 test files; TypeScript strict mode clean; ESLint clean; Prettier
+enforced; both production builds verified; malformed JSON handling fixed; test isolation
+hardened with `fileParallelism: false` and `_test`-suffixed database enforcement.
 
-Those belong to later phases.
+### Phase 6 — Submission preparation
 
-### Phase 2 implementation notes
+Database seed script with safety guards and idempotent demo data; `.env.example` audit and
+documentation of all variables including `SEED_DEMO_DATA`; full README update covering Phases
+0–6; screenshot capture instructions and demo walkthrough script.
 
-Phase 2 delivered the authenticated blood glucose readings CRUD (commit `fe4c183`):
+---
 
-- **Date-only semantics.** `readingDate` is a PostgreSQL `DATE` stored and sorted as `YYYY-MM-DD`
-  internally, while the API accepts and returns **DD-MM-YYYY** (changed per product decision after
-  Phase 2; conversion is pure string arithmetic at the API boundary). No JavaScript timestamp
-  conversion touches it, so no timezone can shift the calendar day. Calendar validity (e.g.
-  30-02-2026 is rejected) is verified with a UTC round-trip check, not `new Date(string)`.
-- **Timezone.** "Today" for the future-date rule is computed in **Asia/Kolkata** via
-  `Intl.DateTimeFormat`. `APP_TIMEZONE` in `apps/server/src/utils/date.ts` is the single place to
-  change it.
-- **Ownership.** The user ID always comes from the verified JWT (`authenticatedUserId`); request
-  bodies cannot set it. Every read, update, and delete filters by both reading id and user id, so
-  foreign readings are indistinguishable from missing ones (`404 Reading not found.`).
-- **Database-backed rules.** One reading per user/date/slot (unique index), 40–600 mg/dl (check
-  constraint plus Zod), at most four readings per day (service count check, message
-  `You can add only 4 readings per day.`). Unique violations map to friendly slot-label conflicts
-  such as `You already have a Morning (fasting) reading for this date.`; no raw database errors
-  leak.
-- **Listing.** Optional `date` (exclusive of `from`/`to`) or `from`/`to` range, no future dates,
-  sorted by `readingDate` descending then slot order (morning, after_breakfast, after_lunch,
-  after_dinner).
-- **Test isolation.** All suites share one `_test` database, so test files run sequentially
-  (`fileParallelism: false`) and cleanup truncates `users CASCADE`, which clears readings too.
-- **Date format.** The assignment's examples used `YYYY-MM-DD`; the product decision afterwards
-  switched the API surface to **DD-MM-YYYY** (storage stays `YYYY-MM-DD`).
-- **Known limitations.** The daily-limit check is count-then-insert, so two simultaneous creates
-  for the same day could theoretically land a fifth reading (the unique index still prevents
-  duplicate slots); readings queries are not paginated yet; deleting a user cascades their
-  readings.
+## Environment variable reference
 
-### Phase 3 (report generation and analytics)
-
-Included:
-
-- `/api/reports/daily?date=…`, `/api/reports/month-to-date?date=…`, and `/api/reports/monthly`
-  endpoints, all behind the existing `requireAuth` middleware
-- Daily report with individual readings in slot order plus highest/lowest/average/count
-- Month-to-date and previous-month reports aggregated in PostgreSQL (`MAX`/`MIN`/`AVG`/`COUNT`
-  through Drizzle) over the `(user_id, reading_date)` index
-- Averages rounded to exactly one decimal place and returned as JSON numbers; `null` (not `0`)
-  aggregates for empty periods
-- Injectable pure date-range helpers (`monthToDateRange`, `previousMonthRange`) unit-tested against
-  reference dates, including January → previous-year December and leap-year February
-- Typed frontend API client (`reportsApi.ts`) and report types (`types/report.ts`) for the Phase 4
-  dashboard — no reporting UI yet
-- Integration tests for all three endpoints (authentication, validation, boundaries, known-value
-  aggregation, rounding, two-user isolation)
-
-Not included (deferred to Phase 4 or later): dashboard UI, charts, doctor accounts, exports,
-email/notifications, caching layers, scheduled reports.
-
-### Phase 3 implementation notes
-
-Phase 3 delivered the reporting module (routes → controller → service → repository → PostgreSQL,
-mirroring the readings module):
-
-- **Architecture.** `apps/server/src/modules/reports/` with `reports.routes.ts` (mounted at
-  `/api/reports`), `reports.controller.ts` (thin: validate query, call service, return JSON),
-  `reports.service.ts` (date-range resolution, empty handling, rounding, DTO conversion),
-  `reports.repository.ts` (single indexed SQL aggregate), and `reports.types.ts`. The daily report
-  reuses `listReadings` from the readings repository — one query already sorted by slot order — and
-  computes its summary from the same rows, so details and aggregates can never disagree.
-- **Date ranges.** `monthToDateRange(reference)` is first-of-month through the reference date; both
-  boundaries inclusive. `previousMonthRange(reference)` uses `Date.UTC` arithmetic — rolling
-  January back to December of the previous year and taking day 0 of the following month as the last
-  day — so no month length is hardcoded and leap years are correct. Both are pure functions of an
-  ISO reference date and are unit-tested with injected reference dates (`2026-01-15` → December
-  2025, `2024-03-10` → 29-day February). `/api/reports/monthly` resolves the reference with
-  `todayInAppTimezone()` (Asia/Kolkata); integration tests seed the previous month dynamically from
-  the same helper, so they do not depend on the machine's date.
-- **Aggregation.** Period reports run one query per report with SQL `MAX`, `MIN`, `AVG`, and
-  `COUNT(*)::int`, filtered by `user_id` and an inclusive date range — never fetch-and-filter in
-  JavaScript. PostgreSQL `AVG` over integers returns a numeric, which arrives as a string; it is
-  converted with `Number()` and rounded with `Math.round(value * 10) / 10`.
-- **Empty reports.** Every endpoint returns `200` with `null` aggregates and `totalReadings: 0`
-  (daily additionally returns `readings: []`). Zero is never used for highest/lowest/average, so an
-  empty report cannot imply a recorded measurement.
-- **Data format.** Report dates follow the project's DD-MM-YYYY API convention (the assignment
-  examples used YYYY-MM-DD; the response shape is a bare object without a `status: 'success'`
-  wrapper, matching the project's conventions).
-- **Validation reuse.** Reports import the same `dateOnlySchema` the readings endpoints use, so
-  date rules and messages are identical across modules.
-- **Isolation.** The user ID always comes from the verified JWT; both the daily listing and the SQL
-  aggregate filter by `user_id`. Two-user integration tests verify that foreign readings never
-  appear in any report.
-- **Known limitations.** No caching or materialized views (each report is one indexed query);
-  `/api/reports/monthly` has no parameter to request a specific month (previous month only, per
-  the assignment); averages are rounded for display — unrounded means are never persisted.
-
-### Phase 4 (frontend implementation and visual design)
-
-Included:
-
-- Cookie-session authentication screens (login, registration with confirmation) using the existing
-  auth API — no tokens in web storage
-- Authenticated route protection (`RequireAuth` / `GuestRoute`) with a loading state while the
-  session is resolved
-- Dashboard: time-aware greeting, the four-slot daily rhythm (the day's readings _are_ the daily
-  summary, with one-tap add on empty slots and edit on filled ones), month-to-date and
-  previous-month overview, recent readings, add/edit/delete with confirmation
-- Readings page: full history grouped by date, optional single-date filter, add/edit/delete
-- Reports page: daily / month-to-date / previous-month tabs, date pickers, summary statistics and
-  bar charts built from actual recorded readings only (no interpolation, no fabricated values, no
-  diagnostic range colouring)
-- Design system (cream/olive tokens, Instrument Sans, shared UI kit), responsive layouts, keyboard
-  and screen-reader affordances, `prefers-reduced-motion` support
-- Client unit tests for routing/redirects, date conversion, and the reading form
-
-Not included: doctor accounts, exports, notifications, diagnostic interpretations, pagination
-(the reading list is naturally small; the API sorts server-side).
-
-### Phase 4 implementation notes
-
-Phase 4 delivered the React frontend (`apps/client`):
-
-- **Architecture.** `context/auth.ts` (session context, `useAuth`) + `AuthContext.tsx`
-  (`AuthProvider`, `RequireAuth`, `GuestRoute`), `components/layout` (app shell, auth layout),
-  `components/ui` (Button, Field/Input, Dialog, Card, StatusNote, authored SVG icons),
-  `components/readings` (form dialog, grouped list, shared add/edit/delete dialog state),
-  `components/reports` + `components/charts`, `lib` (date, slots, chart, status-note helpers),
-  and six pages (public landing, auth, dashboard, readings, reports) wired through React Router
-  — the dashboard lives at `/today`, guests land on `/`.
-- **Session.** `AuthProvider` resolves the session on load with `GET /api/auth/me` (401 →
-  unauthenticated). Login/register POST to the existing endpoints; the HTTP-only cookie remains
-  the only credential anywhere.
-- **Date format.** The client speaks the API's DD-MM-YYYY: HTML date inputs (YYYY-MM-DD) are
-  converted in `lib/date.ts`, and "today" is computed in Asia/Kolkata so the client never offers a
-  date the backend would reject as future.
-- **Data honesty.** Charts draw only recorded readings (per-day means for period reports, labelled
-  as such); empty reports show `—`, never `0`; no reference-range colouring or medical claims — the
-  API numbers are presented as recorded.
-- **Server errors.** API `details` arrays map onto form fields by path (`readingDate`, `slot`,
-  `value`), and 409 messages (duplicate slot, four-per-day limit) surface verbatim in the form.
-- **Test data note.** Verification runs create and then delete their own users; the dev database is
-  left as found.
-
-## Assumptions
-
-- npm is used instead of Bun because the Docker addendum explicitly required Node.js and npm.
-- The repository root is the project root; there is no additional nested project directory.
-- The official `postgres:17-alpine` image is used in Compose, while the local setup was validated with
-  PostgreSQL 18.
-- `postgres` is the Compose service hostname; `localhost` is used outside Compose.
-- The API refuses to start when PostgreSQL is unreachable. The health endpoint itself does not query
-  the database; a successful startup means the initial connection check passed.
-- Dockerfiles target development (Vite dev server and `tsx watch`), not a production web server/CDN setup.
-- The local `.env` on the development machine may use alternate host ports when system services already
-  occupy `5000` or `5432`; these overrides do not change container-internal ports.
-- Vite's env-file loader is disabled to isolate client builds from the server's `NODE_ENV`. No client
-  runtime environment variables are required; future client-specific `VITE_*` configuration can use
-  an app-scoped env file if needed.
-- Authentication cookies are only `secure` in production. Local development over plain HTTP is
-  intentional; a production deployment must serve the API over HTTPS.
-- The application timezone is Asia/Kolkata: "today" for date-only logic (the future-date rule and
-  the previous-month report period) is computed with `Intl.DateTimeFormat` in that zone. Date values
-  are stored and compared as `YYYY-MM-DD` internally, while the API surface speaks DD-MM-YYYY; dates
-  are never converted through timestamps. If the assignment's target audience changes,
-  `APP_TIMEZONE` in `apps/server/src/utils/date.ts` is the single place to adjust.
+| Variable                    | Required    | Purpose                                                       | Default                 |
+| --------------------------- | ----------- | ------------------------------------------------------------- | ----------------------- |
+| `NODE_ENV`                  | No          | Runtime mode (`development`/`test`/`production`)              | `development`           |
+| `PORT`                      | No          | Express server port (host-local)                              | `5000`                  |
+| `CLIENT_URL`                | No          | CORS allowed origin                                           | `http://localhost:5173` |
+| `DATABASE_URL`              | **Yes**     | PostgreSQL connection string                                  | —                       |
+| `TEST_DATABASE_URL`         | For tests   | Vitest test database (must end with `_test`)                  | —                       |
+| `JWT_SECRET`                | **Yes**     | JWT signing key (≥32 chars). Generate: `openssl rand -hex 32` | —                       |
+| `JWT_EXPIRES_IN`            | No          | JWT + cookie lifetime (e.g. `1h`, `7d`)                       | `1h`                    |
+| `AUTH_RATE_LIMIT_WINDOW_MS` | No          | Auth rate-limit window (ms)                                   | `900000`                |
+| `AUTH_RATE_LIMIT_MAX`       | No          | Max auth requests per window per IP                           | `20`                    |
+| `POSTGRES_DB`               | For Docker  | PostgreSQL database name (Compose)                            | `sweety`                |
+| `POSTGRES_USER`             | For Docker  | PostgreSQL user (Compose)                                     | `sweety`                |
+| `POSTGRES_PASSWORD`         | For Docker  | PostgreSQL password (Compose)                                 | —                       |
+| `POSTGRES_PORT`             | For Docker  | Host port mapped to container 5432                            | `5432`                  |
+| `SERVER_PORT`               | For Docker  | Host port mapped to container 5000                            | `5000`                  |
+| `CLIENT_PORT`               | For Docker  | Host port mapped to container 5173                            | `5173`                  |
+| `VITE_API_PROXY_TARGET`     | No          | Vite proxy target for `/api` requests                         | `http://localhost:5000` |
+| `SEED_DEMO_DATA`            | For seeding | Must be `true` to allow seed script to run                    | unset                   |

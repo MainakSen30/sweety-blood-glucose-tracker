@@ -27,6 +27,7 @@
     "db:migrate": "npm run db:migrate --workspace @sweety/server",
     "db:push": "npm run db:push --workspace @sweety/server",
     "db:studio": "npm run db:studio --workspace @sweety/server",
+    "db:seed": "npm run db:seed --workspace=apps/server",
     "docker:up": "docker compose up --build",
     "docker:up:detached": "docker compose up -d --build",
     "docker:down": "docker compose down",
