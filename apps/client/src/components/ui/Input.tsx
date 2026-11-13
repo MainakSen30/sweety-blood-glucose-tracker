@@ -1,4 +1,5 @@
 import { type InputHTMLAttributes, type ReactNode, useId } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 
 interface FieldProps {
   label: string;
@@ -16,6 +17,7 @@ export function Field({ label, error, hint, children }: FieldProps) {
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
   const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ');
+  const reduceMotion = useReducedMotion();
 
   return (
     <div className="space-y-1.5">
@@ -29,9 +31,16 @@ export function Field({ label, error, hint, children }: FieldProps) {
         </p>
       ) : null}
       {error ? (
-        <p id={errorId} role="alert" className="text-xs font-medium text-terracotta-ink">
+        <motion.p
+          id={errorId}
+          role="alert"
+          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
+          animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+          transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
+          className="text-xs font-medium text-terracotta-ink"
+        >
           {error}
-        </p>
+        </motion.p>
       ) : null}
     </div>
   );

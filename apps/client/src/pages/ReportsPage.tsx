@@ -216,6 +216,7 @@ function DailyReportView({
                 }))}
                 average={report.summary.average}
                 title="Glucose values by reading slot for this day"
+                animate
               />
             </div>
           </Card>
@@ -288,6 +289,7 @@ function PeriodReportView({
               points={dailyAveragePoints(readings)}
               average={report.summary.average}
               title="Average glucose per day across the report period"
+              animate
             />
           </div>
         </Card>
