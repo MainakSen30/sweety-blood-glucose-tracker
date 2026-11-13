@@ -1,4 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { motion, useReducedMotion } from 'motion/react';
 import { ValueBars } from '../components/charts/ValueBars.js';
 import { Button } from '../components/ui/Button.js';
 import { BrandMark, PlusIcon } from '../components/ui/icons.js';
@@ -51,6 +52,7 @@ const FEATURES = [
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
 
   return (
     <div className="flex min-h-screen flex-col bg-cream">
@@ -71,7 +73,11 @@ export default function LandingPage() {
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-4 pb-16 pt-10 sm:px-6 sm:pt-14">
         <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
-          <div>
+          <motion.div
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+            animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.42, 0, 1, 1] }}
+          >
             <h1 className="text-4xl font-semibold tracking-tight text-ink sm:text-5xl sm:leading-[1.1]">
               Track your glucose, four readings a day
             </h1>
@@ -89,9 +95,14 @@ export default function LandingPage() {
                 Sign in
               </Link>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="rounded-2xl border border-line bg-surface p-5 shadow-[0_24px_48px_-24px_rgb(52_63_43/0.25)] sm:p-6">
+          <motion.div
+            initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+            animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.42, 0, 1, 1], delay: 0.07 }}
+            className="rounded-2xl border border-line bg-surface p-5 shadow-[0_24px_48px_-24px_rgb(52_63_43/0.25)] sm:p-6"
+          >
             <h2 className="text-lg font-semibold tracking-tight text-ink">Today's readings</h2>
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
               {PREVIEW_SLOTS.map((slot) =>
@@ -175,17 +186,22 @@ export default function LandingPage() {
                 />
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
 
-        <div className="mt-12 grid gap-8 border-t border-line pt-6 sm:grid-cols-3 sm:gap-10">
+        <motion.div
+          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+          animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.42, 0, 1, 1], delay: 0.14 }}
+          className="mt-12 grid gap-8 border-t border-line pt-6 sm:grid-cols-3 sm:gap-10"
+        >
           {FEATURES.map((feature) => (
             <div key={feature.label}>
               <h3 className="text-sm font-semibold text-ink">{feature.label}</h3>
               <p className="mt-1.5 text-sm leading-6 text-ink-soft">{feature.line}</p>
             </div>
           ))}
-        </div>
+        </motion.div>
       </main>
 
       <footer className="border-t border-line">
