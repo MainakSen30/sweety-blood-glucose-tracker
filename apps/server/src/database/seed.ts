@@ -88,11 +88,13 @@ if (!dbName) {
   );
 }
 
-const NON_PRODUCTION_PATTERNS = /dev|demo|local|test/i;
+// 'sweety' (without a suffix) is the conventional local dev DB name for this project.
+const NON_PRODUCTION_PATTERNS = /dev|demo|local|test|^sweety$/i;
 if (!NON_PRODUCTION_PATTERNS.test(dbName)) {
   exitWithError(
     `DATABASE_URL points to database "${dbName}", which does not look like a ` +
-      'development or demo database (name must contain dev, demo, local, or test). ' +
+      'development or demo database (name must contain dev, demo, local, or test, ' +
+      'or be exactly "sweety" for the default local setup). ' +
       'Update DATABASE_URL to a safe development database before running the seed.',
   );
 }

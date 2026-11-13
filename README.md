@@ -333,9 +333,19 @@ SEED_DEMO_DATA=true
 
 Then run:
 
+**Running locally (host PostgreSQL):**
+
 ```bash
 npm run db:seed
 ```
+
+**Running via Docker Compose:**
+
+```bash
+docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx /app/apps/server/src/database/seed.ts"
+```
+
+> `tsx` is hoisted to the workspace root `node_modules`, so the full path is required inside the container.
 
 ### Demo credentials
 
