@@ -43,8 +43,8 @@ export async function list(request: Request, response: Response): Promise<Respon
     });
   }
 
-  const readings = await listUserReadings(userId, parsedQuery.data);
-  return response.status(200).json(readings);
+  const result = await listUserReadings(userId, parsedQuery.data);
+  return response.status(200).json(result);
 }
 
 export async function get(request: Request, response: Response): Promise<Response> {

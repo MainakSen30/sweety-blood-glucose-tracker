@@ -4,6 +4,26 @@ import { isFutureDate, parseDDMMYYYY } from '../../utils/date.js';
 
 const VALUE_RANGE_MESSAGE = 'Value must be between 40 and 600 mg/dl.';
 const INVALID_DATE_MESSAGE = 'Please enter a valid date in DD-MM-YYYY format.';
+const PAGE_MESSAGE = 'Page must be a positive integer.';
+const LIMIT_MESSAGE = 'Limit must be a whole number from 1 to 100.';
+
+/**
+ * Query parameters arrive as strings, so each is parsed explicitly and then
+ * range-checked. Missing values fall back to the documented defaults.
+ */
+const pageQuerySchema = z
+  .string({ error: PAGE_MESSAGE })
+  .regex(/^\d+$/, { error: PAGE_MESSAGE })
+  .transform(Number)
+  .pipe(z.number().int().min(1, { error: PAGE_MESSAGE }))
+  .default(1);
+
+const limitQuerySchema = z
+  .string({ error: LIMIT_MESSAGE })
+  .regex(/^\d+$/, { error: LIMIT_MESSAGE })
+  .transform(Number)
+  .pipe(z.number().int().min(1, { error: LIMIT_MESSAGE }).max(100, { error: LIMIT_MESSAGE }))
+  .default(20);
 
 /**
  * Validates a DD-MM-YYYY date string: exact shape, a real calendar date, and
@@ -56,6 +76,8 @@ export const listReadingsQuerySchema = z
     date: dateOnlySchema.optional(),
     from: dateOnlySchema.optional(),
     to: dateOnlySchema.optional(),
+    page: pageQuerySchema,
+    limit: limitQuerySchema,
   })
   .refine(
     (query) => !(query.date !== undefined && (query.from !== undefined || query.to !== undefined)),

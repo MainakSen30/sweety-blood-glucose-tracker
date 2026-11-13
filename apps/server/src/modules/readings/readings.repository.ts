@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../../database/index.js';
 import { readings, type Reading } from '../../database/schema.js';
 import { HttpError } from '../../utils/errors.js';
@@ -79,7 +79,43 @@ export async function findReadingById(id: string, userId: string): Promise<Readi
 export async function listReadings(
   userId: string,
   filters: ListReadingsFilters,
+  pagination?: { limit: number; offset: number },
 ): Promise<Reading[]> {
+  const baseQuery = db
+    .select()
+    .from(readings)
+    .where(readingsWhere(userId, filters))
+    .orderBy(
+      desc(readings.readingDate),
+      sql`case ${readings.slot}
+            when 'morning' then 0
+            when 'after_breakfast' then 1
+            when 'after_lunch' then 2
+            when 'after_dinner' then 3
+          end`,
+      // date + slot is already unique per user; the id keeps ordering
+      // deterministic if that constraint ever changes.
+      asc(readings.id),
+    );
+
+  if (!pagination) {
+    return baseQuery;
+  }
+
+  return baseQuery.limit(pagination.limit).offset(pagination.offset);
+}
+
+export async function countReadings(userId: string, filters: ListReadingsFilters): Promise<number> {
+  const result = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(readings)
+    .where(readingsWhere(userId, filters));
+
+  return result[0]?.count ?? 0;
+}
+
+/** Shared ownership and filter conditions for the page and count queries. */
+function readingsWhere(userId: string, filters: ListReadingsFilters) {
   const conditions = [eq(readings.userId, userId)];
 
   if (filters.date) {
@@ -92,21 +128,7 @@ export async function listReadings(
     conditions.push(lte(readings.readingDate, filters.to));
   }
 
-  // Sort by readingDate descending, then slot order
-  // (morning, after_breakfast, after_lunch, after_dinner).
-  return db
-    .select()
-    .from(readings)
-    .where(and(...conditions))
-    .orderBy(
-      desc(readings.readingDate),
-      sql`case ${readings.slot}
-            when 'morning' then 0
-            when 'after_breakfast' then 1
-            when 'after_lunch' then 2
-            when 'after_dinner' then 3
-          end`,
-    );
+  return and(...conditions);
 }
 
 export async function updateReading(

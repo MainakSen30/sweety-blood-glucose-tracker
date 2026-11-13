@@ -180,7 +180,8 @@ describe('daily reading limit edge cases', () => {
 
     // Delete the morning reading; daily count drops back to 3.
     const list = await request(app).get('/api/readings').set('Cookie', cookie);
-    const morningId = list.body.find((r: { slot: string }) => r.slot === 'morning').id as string;
+    const morningId = list.body.data.find((r: { slot: string }) => r.slot === 'morning')
+      .id as string;
     const del = await request(app).delete(`/api/readings/${morningId}`).set('Cookie', cookie);
     expect(del.status).toBe(200);
 
@@ -203,7 +204,8 @@ describe('daily reading limit edge cases', () => {
 
     // Retrieve the morning reading id.
     const list = await request(app).get('/api/readings').set('Cookie', cookie);
-    const morningId = list.body.find((r: { slot: string }) => r.slot === 'morning').id as string;
+    const morningId = list.body.data.find((r: { slot: string }) => r.slot === 'morning')
+      .id as string;
 
     // Update the value only (same date, same slot) — must NOT be treated as a 5th reading.
     const patch = await request(app)

@@ -2,6 +2,7 @@ import { apiFetch } from './http.js';
 import type {
   CreateReadingInput,
   ListReadingsFilters,
+  PaginatedReadings,
   Reading,
   ReadingSlot,
   UpdateReadingInput,
@@ -20,7 +21,7 @@ export function createReading(input: CreateReadingInput): Promise<Reading> {
   });
 }
 
-export function listReadings(filters: ListReadingsFilters = {}): Promise<Reading[]> {
+export function listReadings(filters: ListReadingsFilters = {}): Promise<PaginatedReadings> {
   const query = new URLSearchParams();
 
   if (filters.date !== undefined) {
@@ -32,11 +33,36 @@ export function listReadings(filters: ListReadingsFilters = {}): Promise<Reading
   if (filters.to !== undefined) {
     query.set('to', filters.to);
   }
+  if (filters.page !== undefined) {
+    query.set('page', String(filters.page));
+  }
+  if (filters.limit !== undefined) {
+    query.set('limit', String(filters.limit));
+  }
 
   const queryString = query.toString();
   const path = queryString ? `/api/readings?${queryString}` : '/api/readings';
 
-  return apiFetch<Reading[]>(path);
+  return apiFetch<PaginatedReadings>(path);
+}
+
+/**
+ * Walks every page of a filtered list. Used by the reports charts, which need
+ * the whole period rather than one page of it.
+ */
+export async function listAllReadings(filters: ListReadingsFilters = {}): Promise<Reading[]> {
+  const readings: Reading[] = [];
+  let page = 1;
+  let totalPages: number;
+
+  do {
+    const result = await listReadings({ ...filters, page, limit: 100 });
+    readings.push(...result.data);
+    totalPages = result.pagination.totalPages;
+    page += 1;
+  } while (page <= totalPages);
+
+  return readings;
 }
 
 export function getReading(id: string): Promise<Reading> {

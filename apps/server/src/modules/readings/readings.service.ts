@@ -1,5 +1,6 @@
 import { HttpError } from '../../utils/errors.js';
 import {
+  countReadings,
   countReadingsForDate,
   deleteReading,
   findReadingById,
@@ -14,7 +15,12 @@ import type {
   ListReadingsQuery,
   UpdateReadingInput,
 } from './readings.validation.js';
-import { toReadingDto, type ReadingDto, type ReadingSlot } from './readings.types.js';
+import {
+  toReadingDto,
+  type PaginatedReadingsDto,
+  type ReadingDto,
+  type ReadingSlot,
+} from './readings.types.js';
 
 const MAX_READINGS_PER_DAY = 4;
 const READING_NOT_FOUND_MESSAGE = 'Reading not found.';
@@ -42,7 +48,7 @@ export async function createReading(
 export async function listUserReadings(
   userId: string,
   query: ListReadingsQuery,
-): Promise<ReadingDto[]> {
+): Promise<PaginatedReadingsDto> {
   const filters: ListReadingsFilters = {};
 
   if (query.date !== undefined) {
@@ -55,9 +61,25 @@ export async function listUserReadings(
     filters.to = query.to;
   }
 
-  const readings = await listReadings(userId, filters);
+  const offset = (query.page - 1) * query.limit;
+  const [readings, total] = await Promise.all([
+    listReadings(userId, filters, { limit: query.limit, offset }),
+    countReadings(userId, filters),
+  ]);
+  const totalPages = Math.ceil(total / query.limit);
 
-  return readings.map(toReadingDto);
+  return {
+    data: readings.map(toReadingDto),
+    pagination: {
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages,
+      hasNextPage: query.page < totalPages,
+      // A user with no readings is never "on a later page".
+      hasPreviousPage: total > 0 && query.page > 1,
+    },
+  };
 }
 
 export async function getReading(userId: string, id: string): Promise<ReadingDto> {

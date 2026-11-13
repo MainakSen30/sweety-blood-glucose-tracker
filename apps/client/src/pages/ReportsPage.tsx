@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { getDailyReport, getMonthlyReport, getMonthToDateReport } from '../services/reportsApi.js';
-import { listReadings } from '../services/readingsApi.js';
+import { listAllReadings } from '../services/readingsApi.js';
 import type { DailyReport, PeriodReport } from '../types/report.js';
 import type { Reading } from '../types/reading.js';
 import {
@@ -63,7 +63,7 @@ export default function ReportsPage() {
               : await getMonthlyReport();
           // The chart draws actual readings across the report's own period,
           // so the dates come from the API response — no range math here.
-          const periodReadings = await listReadings({
+          const periodReadings = await listAllReadings({
             from: periodReport.period.startDate,
             to: periodReport.period.endDate,
           });

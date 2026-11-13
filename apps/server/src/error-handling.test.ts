@@ -191,8 +191,8 @@ describe('open-ended date range filter', () => {
       .set('Cookie', cookie);
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].readingDate).toBe('12-01-2026');
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].readingDate).toBe('12-01-2026');
   });
 
   it('E17: a to-only range (without from) returns all readings on or before to', async () => {
@@ -208,8 +208,8 @@ describe('open-ended date range filter', () => {
       .set('Cookie', cookie);
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(2);
-    const dates = res.body.map((r: { readingDate: string }) => r.readingDate) as string[];
+    expect(res.body.data).toHaveLength(2);
+    const dates = res.body.data.map((r: { readingDate: string }) => r.readingDate) as string[];
     expect(dates).toContain('10-01-2026');
     expect(dates).toContain('05-01-2026');
   });
@@ -269,7 +269,7 @@ describe('duplicate record attempts', () => {
 
     // Only the original reading must exist; value 999 must not have been stored.
     const list = await request(app).get('/api/readings').set('Cookie', cookie);
-    expect(list.body).toHaveLength(1);
-    expect(list.body[0].value).toBe(100);
+    expect(list.body.data).toHaveLength(1);
+    expect(list.body.data[0].value).toBe(100);
   });
 });

@@ -49,16 +49,16 @@ export default function DashboardPage() {
 
     void (async () => {
       try {
-        const [daily, monthToDate, monthly, allReadings] = await Promise.all([
+        const [daily, monthToDate, monthly, recentPage] = await Promise.all([
           getDailyReport(today),
           getMonthToDateReport(today),
           getMonthlyReport(),
-          listReadings(),
+          listReadings({ limit: 6 }),
         ]);
 
         if (cancelled) return;
 
-        setData({ daily, monthToDate, monthly, recent: allReadings.slice(0, 6) });
+        setData({ daily, monthToDate, monthly, recent: recentPage.data });
         setError(false);
       } catch {
         if (!cancelled) {

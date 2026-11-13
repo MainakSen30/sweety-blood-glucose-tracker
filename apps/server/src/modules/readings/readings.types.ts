@@ -33,6 +33,20 @@ export interface ReadingDto {
   updatedAt: Date;
 }
 
+export interface PaginationMetadata {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface PaginatedReadingsDto {
+  data: ReadingDto[];
+  pagination: PaginationMetadata;
+}
+
 export function toReadingDto(reading: {
   id: string;
   userId: string;

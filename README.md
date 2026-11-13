@@ -4,9 +4,9 @@ SWEETy is a full-stack web application that lets a person with diabetes record u
 glucose readings per day across four named time slots, and review daily, month-to-date, and
 previous-month reports with summary statistics.
 
-This repository covers **Phase 0 through Phase 6**: monorepo foundation, authentication,
-readings CRUD, report generation, React frontend, testing and hardening, and submission
-preparation.
+This repository covers **Phase 0 through Phase 7**: monorepo foundation, authentication,
+readings CRUD, report generation, React frontend, testing and hardening, submission
+preparation, and paginated readings history.
 
 ---
 
@@ -74,6 +74,7 @@ Main user workflows:
 - Maximum four readings per day per user (one per slot)
 - Ownership enforcement on every query — a user's readings are never visible to another
 - Date filtering and range filtering on the list endpoint
+- Paginated list endpoint (`page` / `limit`) with user-scoped totals and deterministic ordering
 - Glucose values validated to 40–600 mg/dL
 - Dates stored as PostgreSQL `DATE` values in YYYY-MM-DD and exposed in DD-MM-YYYY format
 - "Today" for the future-date rule computed in Asia/Kolkata timezone
@@ -93,7 +94,8 @@ Main user workflows:
 - Landing page with product introduction
 - Registration and login screens with client-side form feedback
 - Authenticated dashboard: time-aware greeting, four daily slots, overview summary cards
-- Readings history page with optional single-day filter
+- Readings history page with optional single-day filter, paginated controls, and a page-size
+  selector (10 / 20 / 50)
 - Reading add/edit/delete dialogs with field-level validation messages
 - Reports page with daily, month-to-date, and previous-month tabs; bar charts; summary statistics
 - Responsive layout (mobile-first, works on 320 px–1440 px+ viewports)
@@ -103,7 +105,7 @@ Main user workflows:
 
 ### Testing
 
-- 148 passing tests across 9 test files (see CI output for current results)
+- 249 passing tests across 18 test files (see CI output for current results)
 - Server integration tests using Supertest against a real PostgreSQL test database
 - Client unit tests with Vitest and React Testing Library
 - TypeScript strict mode — zero type errors
@@ -550,13 +552,13 @@ is missing, invalid, or expired.
 All reading endpoints require authentication (`401` otherwise). Readings always belong to the
 authenticated user; a user ID in the request body is never trusted.
 
-| Method   | Endpoint            | Description                           |
-| -------- | ------------------- | ------------------------------------- |
-| `POST`   | `/api/readings`     | Create a reading                      |
-| `GET`    | `/api/readings`     | List readings (optional date filters) |
-| `GET`    | `/api/readings/:id` | Retrieve one reading                  |
-| `PATCH`  | `/api/readings/:id` | Update one reading                    |
-| `DELETE` | `/api/readings/:id` | Delete one reading                    |
+| Method   | Endpoint            | Description                                 |
+| -------- | ------------------- | ------------------------------------------- |
+| `POST`   | `/api/readings`     | Create a reading                            |
+| `GET`    | `/api/readings`     | List readings (paginated, optional filters) |
+| `GET`    | `/api/readings/:id` | Retrieve one reading                        |
+| `PATCH`  | `/api/readings/:id` | Update one reading                          |
+| `DELETE` | `/api/readings/:id` | Delete one reading                          |
 
 #### POST /api/readings
 
@@ -587,12 +589,70 @@ the same day.
 #### GET /api/readings
 
 ```http
-GET /api/readings                           # all readings, newest first
-GET /api/readings?date=12-11-2026          # single day
-GET /api/readings?from=01-11-2026&to=10-11-2026
+GET /api/readings                                          # page 1, 20 per page
+GET /api/readings?page=2&limit=20                          # second page
+GET /api/readings?page=1&limit=10                          # custom page size
+GET /api/readings?date=12-11-2026                          # single day
+GET /api/readings?from=01-11-2026&to=10-11-2026            # date range
+GET /api/readings?from=01-11-2026&to=10-11-2026&page=2     # filters + pagination
 ```
 
-Results sorted by `readingDate` descending, then slot order.
+Query parameters:
+
+| Parameter | Default | Validation                                                    |
+| --------- | ------- | ------------------------------------------------------------- |
+| `page`    | `1`     | Positive integer.                                             |
+| `limit`   | `20`    | Positive integer, maximum `100`.                              |
+| `date`    | —       | Single `DD-MM-YYYY` day. Cannot be combined with `from`/`to`. |
+| `from`    | —       | Inclusive `DD-MM-YYYY` range start.                           |
+| `to`      | —       | Inclusive `DD-MM-YYYY` range end.                             |
+
+Results are sorted by `readingDate` descending, then slot order
+(`morning`, `after_breakfast`, `after_lunch`, `after_dinner`), with the reading id as a final
+deterministic tie-breaker. Pagination is applied after filtering; `total` always counts the full
+filtered result set for the authenticated user.
+
+Response `200`:
+
+```json
+{
+  "data": [
+    {
+      "id": "0f8d4c7a-4f3e-4d8a-9d3e-6e2a1b7c9d01",
+      "userId": "6f1c2b52-9f2f-4f1e-9f9a-1a2b3c4d5e6f",
+      "readingDate": "12-11-2026",
+      "slot": "morning",
+      "value": 105,
+      "createdAt": "2026-11-12T10:30:00.000Z",
+      "updatedAt": "2026-11-12T10:30:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 45,
+    "totalPages": 3,
+    "hasNextPage": true,
+    "hasPreviousPage": false
+  }
+}
+```
+
+Pagination metadata:
+
+- `total` — matching readings owned by the authenticated user.
+- `totalPages` — `ceil(total / limit)`; `0` when the user has no matching readings.
+- `hasNextPage` / `hasPreviousPage` — whether adjacent pages exist.
+
+Edge cases:
+
+- A user with no readings receives `data: []`, `total: 0`, `totalPages: 0`, and both navigation
+  flags `false`.
+- The last page may contain fewer than `limit` readings.
+- A page beyond the last page returns `data: []` and valid metadata for the requested page; it
+  never silently returns a different page.
+- Invalid `page` or `limit` values return the standard `400` validation response with a `details`
+  entry whose `path` is `page` or `limit`.
 
 #### PATCH /api/readings/:id
 
@@ -709,12 +769,14 @@ runs, so the test schema always matches the repository.
 - Case-insensitive duplicate email detection
 - JWT middleware (missing, invalid, expired, wrong algorithm tokens)
 - Complete readings CRUD: creation validation (range, slots, dates, duplicates, daily limit),
-  multi-user ownership isolation, list filtering, sorting, update conflicts, deletion, cascade
-  constraints
+  multi-user ownership isolation, list filtering, sorting, pagination (defaults, custom limits,
+  final/empty/beyond-last pages, per-user totals), update conflicts, deletion, cascade constraints
 - Reports: daily, month-to-date, previous-month — authentication, validation, known-value
   aggregation, rounding, two-user isolation
 - Client routing and redirects
 - Client date conversion utilities
+- Client readings pagination (controls, page changes, loading/error states, page-size reset,
+  mutation refresh, empty-page fallback)
 - Reading form dialog behaviour
 - HTTP error handling
 
@@ -761,14 +823,13 @@ Test counts: see CI output for current results.
 - The application timezone is **Asia/Kolkata**. "Today" for future-date validation and report
   period calculation is determined in this timezone. `APP_TIMEZONE` in
   `apps/server/src/utils/date.ts` is the single place to change it.
-- Readings are not paginated — the list is naturally small for personal use.
 - The daily-limit check is count-then-insert; two simultaneous creates for the same day could
   theoretically land a fifth reading (the unique slot index still prevents duplicates).
 - Authentication cookies are only `Secure` in production. Local development over plain HTTP is
   intentional and expected.
 - The `GET /api/health` endpoint returns `200` after a successful database connection check at
   startup; it does not query the database on every request.
-- Doctor roles, reminders, notifications, exports, and pagination are intentionally out of scope.
+- Doctor roles, reminders, notifications, and exports are intentionally out of scope.
 
 ---
 
@@ -844,6 +905,13 @@ hardened with `fileParallelism: false` and `_test`-suffixed database enforcement
 Database seed script with safety guards and idempotent demo data; `.env.example` audit and
 documentation of all variables including `SEED_DEMO_DATA`; full README update covering Phases
 0–6; screenshot capture instructions and demo walkthrough script.
+
+### Phase 7 — Readings pagination
+
+User-scoped `page` / `limit` pagination on `GET /api/readings` with Zod-validated query params,
+shared filter conditions for the data and count queries, deterministic ordering, structured
+`data` + `pagination` responses, and Previous/Next pagination controls with a page-size selector
+on the Readings page. Documented defaults, maximum limit, and beyond-last-page behaviour.
 
 ---
 

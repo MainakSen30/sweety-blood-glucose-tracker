@@ -2,6 +2,8 @@ import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import app from '../../app.js';
+import { db } from '../../database/index.js';
+import { readings } from '../../database/schema.js';
 import { closeTestPool, getTestPool, resetDatabase } from '../../../tests/database.js';
 import { tomorrowInAppTimezone } from '../../utils/date.js';
 import { toDDMMYYYY } from '../../utils/date.js';
@@ -45,6 +47,28 @@ const PAST_DATE_ISO = '2026-01-15';
 
 async function createReading(cookie: string, body: Record<string, unknown>) {
   return request(app).post('/api/readings').set('Cookie', cookie).send(body);
+}
+
+/** Bulk-inserts readings across consecutive days, four per day. */
+async function insertReadingSeries(email: string, count: number): Promise<string> {
+  const userId = (
+    await getTestPool().query<{ id: string }>('SELECT id FROM users WHERE email = $1', [email])
+  ).rows[0]?.id;
+
+  if (!userId) {
+    throw new Error(`Test user ${email} was not found.`);
+  }
+
+  const slots = ['morning', 'after_breakfast', 'after_lunch', 'after_dinner'] as const;
+  const rows = Array.from({ length: count }, (_, index) => ({
+    userId,
+    readingDate: `2026-01-${String(Math.floor(index / 4) + 1).padStart(2, '0')}`,
+    slot: slots[index % slots.length]!,
+    value: 100 + index,
+  }));
+
+  await db.insert(readings).values(rows);
+  return userId;
 }
 
 beforeEach(async () => {
@@ -328,7 +352,9 @@ describe('GET /api/readings (list)', () => {
     const response = await request(app).get('/api/readings').set('Cookie', cookieA);
 
     expect(response.status).toBe(200);
-    expect(response.body.map((reading: { value: number }) => reading.value)).toEqual([100, 150]);
+    expect(response.body.data.map((reading: { value: number }) => reading.value)).toEqual([
+      100, 150,
+    ]);
   });
 
   it('filters by a single date', async () => {
@@ -343,8 +369,8 @@ describe('GET /api/readings (list)', () => {
       .set('Cookie', cookie);
 
     expect(response.status).toBe(200);
-    expect(response.body).toHaveLength(1);
-    expect(response.body[0].readingDate).toBe(PAST_DATE);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].readingDate).toBe(PAST_DATE);
   });
 
   it('filters by a from/to range', async () => {
@@ -360,8 +386,8 @@ describe('GET /api/readings (list)', () => {
       .set('Cookie', cookie);
 
     expect(response.status).toBe(200);
-    expect(response.body).toHaveLength(1);
-    expect(response.body[0].readingDate).toBe('12-01-2026');
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].readingDate).toBe('12-01-2026');
   });
 
   it('rejects combining date with from', async () => {
@@ -445,13 +471,244 @@ describe('GET /api/readings (list)', () => {
     const response = await request(app).get('/api/readings').set('Cookie', cookie);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual([
+    expect(response.body.data).toEqual([
       expect.objectContaining({ readingDate: '12-01-2026', slot: 'morning' }),
       expect.objectContaining({ readingDate: '12-01-2026', slot: 'after_breakfast' }),
       expect.objectContaining({ readingDate: '12-01-2026', slot: 'after_lunch' }),
       expect.objectContaining({ readingDate: '12-01-2026', slot: 'after_dinner' }),
       expect.objectContaining({ readingDate: '10-01-2026', slot: 'morning' }),
     ]);
+  });
+});
+
+describe('GET /api/readings pagination', () => {
+  it('defaults to page 1 with 20 readings and returns complete metadata', async () => {
+    const cookie = await registerTestUser('page-defaults@example.com');
+    await insertReadingSeries('page-defaults@example.com', 45);
+
+    const response = await request(app).get('/api/readings').set('Cookie', cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(20);
+    expect(response.body.pagination).toEqual({
+      page: 1,
+      limit: 20,
+      total: 45,
+      totalPages: 3,
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+  });
+
+  it('returns a custom limit and the remaining readings on the final page', async () => {
+    const cookie = await registerTestUser('page-limit@example.com');
+    await insertReadingSeries('page-limit@example.com', 45);
+
+    const secondPage = await request(app)
+      .get('/api/readings')
+      .query({ page: 2, limit: 10 })
+      .set('Cookie', cookie);
+    const finalPage = await request(app)
+      .get('/api/readings')
+      .query({ page: 3, limit: 20 })
+      .set('Cookie', cookie);
+
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.data).toHaveLength(10);
+    expect(secondPage.body.pagination).toEqual({
+      page: 2,
+      limit: 10,
+      total: 45,
+      totalPages: 5,
+      hasNextPage: true,
+      hasPreviousPage: true,
+    });
+
+    expect(finalPage.status).toBe(200);
+    expect(finalPage.body.data).toHaveLength(5);
+    expect(finalPage.body.pagination).toEqual({
+      page: 3,
+      limit: 20,
+      total: 45,
+      totalPages: 3,
+      hasNextPage: false,
+      hasPreviousPage: true,
+    });
+  });
+
+  it('never repeats a reading across adjacent pages', async () => {
+    const cookie = await registerTestUser('page-overlap@example.com');
+    await insertReadingSeries('page-overlap@example.com', 45);
+
+    const firstPage = await request(app)
+      .get('/api/readings')
+      .query({ page: 1, limit: 20 })
+      .set('Cookie', cookie);
+    const secondPage = await request(app)
+      .get('/api/readings')
+      .query({ page: 2, limit: 20 })
+      .set('Cookie', cookie);
+    const firstIds = new Set(firstPage.body.data.map((reading: { id: string }) => reading.id));
+
+    expect(secondPage.body.data).toHaveLength(20);
+    for (const reading of secondPage.body.data as Array<{ id: string }>) {
+      expect(firstIds.has(reading.id)).toBe(false);
+    }
+  });
+
+  it('returns an empty page with valid metadata beyond the last page', async () => {
+    const cookie = await registerTestUser('page-beyond@example.com');
+    await insertReadingSeries('page-beyond@example.com', 45);
+
+    const response = await request(app)
+      .get('/api/readings')
+      .query({ page: 999, limit: 20 })
+      .set('Cookie', cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: [],
+      pagination: {
+        page: 999,
+        limit: 20,
+        total: 45,
+        totalPages: 3,
+        hasNextPage: false,
+        hasPreviousPage: true,
+      },
+    });
+  });
+
+  it('applies pagination after date filtering and counts only filtered readings', async () => {
+    const cookie = await registerTestUser('page-filter@example.com');
+    await insertReadingSeries('page-filter@example.com', 45);
+
+    const response = await request(app)
+      .get('/api/readings')
+      .query({ from: '01-01-2026', to: '03-01-2026', page: 1, limit: 5 })
+      .set('Cookie', cookie);
+    const finalPage = await request(app)
+      .get('/api/readings')
+      .query({ from: '01-01-2026', to: '03-01-2026', page: 3, limit: 5 })
+      .set('Cookie', cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(5);
+    expect(response.body.pagination).toEqual({
+      page: 1,
+      limit: 5,
+      total: 12,
+      totalPages: 3,
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+    expect(finalPage.body.data).toHaveLength(2);
+  });
+
+  it('returns a valid empty response for a user with no readings', async () => {
+    const cookie = await registerTestUser('page-empty@example.com');
+
+    const response = await request(app).get('/api/readings').set('Cookie', cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: [],
+      pagination: {
+        page: 1,
+        limit: 20,
+        total: 0,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+    });
+  });
+
+  it('keeps totals and records scoped to the authenticated user', async () => {
+    const cookieA = await registerTestUser('page-owner-a@example.com');
+    const cookieB = await registerTestUser('page-owner-b@example.com');
+    const userAId = await insertReadingSeries('page-owner-a@example.com', 30);
+    const userBId = await insertReadingSeries('page-owner-b@example.com', 5);
+
+    const responseA = await request(app)
+      .get('/api/readings')
+      .query({ page: 2, limit: 20 })
+      .set('Cookie', cookieA);
+    const responseB = await request(app)
+      .get('/api/readings')
+      .query({ page: 2, limit: 20 })
+      .set('Cookie', cookieB);
+    const beyondA = await request(app)
+      .get('/api/readings')
+      .query({ page: 999, limit: 20 })
+      .set('Cookie', cookieA);
+
+    expect(responseA.status).toBe(200);
+    expect(responseA.body.pagination.total).toBe(30);
+    expect(responseA.body.data).toHaveLength(10);
+    expect(
+      responseA.body.data.every((reading: { userId: string }) => reading.userId === userAId),
+    ).toBe(true);
+
+    expect(responseB.status).toBe(200);
+    expect(responseB.body.pagination.total).toBe(5);
+    expect(responseB.body.data).toHaveLength(0);
+    expect(
+      responseB.body.data.every((reading: { userId: string }) => reading.userId === userBId),
+    ).toBe(true);
+
+    expect(beyondA.body.pagination.total).toBe(30);
+    expect(beyondA.body.data).toEqual([]);
+  });
+
+  it.each([
+    {
+      label: 'page=0',
+      query: { page: '0' },
+      path: 'page',
+      message: 'Page must be a positive integer.',
+    },
+    {
+      label: 'page=-1',
+      query: { page: '-1' },
+      path: 'page',
+      message: 'Page must be a positive integer.',
+    },
+    {
+      label: 'page=abc',
+      query: { page: 'abc' },
+      path: 'page',
+      message: 'Page must be a positive integer.',
+    },
+    {
+      label: 'limit=0',
+      query: { limit: '0' },
+      path: 'limit',
+      message: 'Limit must be a whole number from 1 to 100.',
+    },
+    {
+      label: 'limit=-1',
+      query: { limit: '-1' },
+      path: 'limit',
+      message: 'Limit must be a whole number from 1 to 100.',
+    },
+    {
+      label: 'limit=101',
+      query: { limit: '101' },
+      path: 'limit',
+      message: 'Limit must be a whole number from 1 to 100.',
+    },
+  ])('rejects $label', async ({ query, path, message }) => {
+    const cookie = await registerTestUser(`page-invalid-${randomUUID()}@example.com`);
+
+    const response = await request(app).get('/api/readings').query(query).set('Cookie', cookie);
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      status: 'error',
+      message: 'Validation failed',
+      details: [{ path, message }],
+    });
   });
 });
 

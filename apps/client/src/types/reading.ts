@@ -34,6 +34,22 @@ export interface ListReadingsFilters {
   date?: string;
   from?: string;
   to?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginationMetadata {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface PaginatedReadings {
+  data: Reading[];
+  pagination: PaginationMetadata;
 }
 
 /** Optional labels for UI use; the server also uses these in error messages. */
