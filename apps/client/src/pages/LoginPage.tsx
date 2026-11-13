@@ -41,7 +41,7 @@ export default function LoginPage() {
 
     try {
       await login({ email: email.trim(), password });
-      navigate((location.state as { from?: string } | null)?.from ?? '/', { replace: true });
+      navigate((location.state as { from?: string } | null)?.from ?? '/today', { replace: true });
     } catch (error) {
       setFormError(
         error instanceof ApiError ? error.message : 'Something went wrong. Please try again.',

@@ -70,7 +70,7 @@ export function RequireAuth() {
   return <Outlet />;
 }
 
-/** Keeps signed-in users out of the auth screens. */
+/** Keeps signed-in users out of guest pages, landing included. */
 export function GuestRoute({ children }: { children: ReactNode }) {
   const { status } = useAuth();
 
@@ -79,7 +79,7 @@ export function GuestRoute({ children }: { children: ReactNode }) {
   }
 
   if (status === 'authenticated') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/today" replace />;
   }
 
   return children;

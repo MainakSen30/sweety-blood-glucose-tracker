@@ -148,7 +148,7 @@ export default function DashboardPage() {
                   key={slot}
                   type="button"
                   onClick={() => openEdit(asReading(reading))}
-                  className="rounded-xl border border-sage bg-sage/40 p-3 text-left transition-colors duration-150 hover:bg-sage/70"
+                  className="rounded-xl bg-sage/40 p-3 text-left transition-colors duration-150 hover:bg-sage/70"
                 >
                   <span className="block text-xs font-medium text-ink-soft">
                     {slotShortLabel(slot)}

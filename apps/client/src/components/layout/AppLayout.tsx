@@ -6,7 +6,7 @@ import { Button } from '../ui/Button.js';
 import { BrandMark, LogOutIcon } from '../ui/icons.js';
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Today', end: true },
+  { to: '/today', label: 'Today' },
   { to: '/readings', label: 'Readings' },
   { to: '/reports', label: 'Reports' },
 ];
@@ -27,7 +27,7 @@ export function AppLayout() {
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-line bg-cream/95 backdrop-blur-sm">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-          <NavLink to="/" className="flex items-center gap-2.5">
+          <NavLink to="/today" className="flex items-center gap-2.5">
             <BrandMark className="size-7" />
             <span className="text-lg font-semibold tracking-tight text-olive-dark">Sweety</span>
           </NavLink>
@@ -38,7 +38,6 @@ export function AppLayout() {
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
-                    end={item.end}
                     className={({ isActive }) =>
                       `flex min-h-11 items-center rounded-xl px-3.5 text-sm font-medium transition-colors duration-150 ${
                         isActive

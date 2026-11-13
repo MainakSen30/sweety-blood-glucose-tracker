@@ -49,7 +49,7 @@ export default function RegisterPage() {
 
     try {
       await register({ name: name.trim(), email: email.trim(), password });
-      navigate('/', { replace: true });
+      navigate('/today', { replace: true });
     } catch (error) {
       if (error instanceof ApiError && error.details && error.details.length > 0) {
         setFieldErrors(

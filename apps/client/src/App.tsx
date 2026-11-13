@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, GuestRoute, RequireAuth } from './context/AuthContext.js';
 import { AppLayout } from './components/layout/AppLayout.js';
+import LandingPage from './pages/LandingPage.js';
 import LoginPage from './pages/LoginPage.js';
 import RegisterPage from './pages/RegisterPage.js';
 import DashboardPage from './pages/DashboardPage.js';
@@ -11,9 +12,18 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
+        <Route
+          index
+          element={
+            <GuestRoute>
+              <LandingPage />
+            </GuestRoute>
+          }
+        />
+
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
-            <Route index element={<DashboardPage />} />
+            <Route path="today" element={<DashboardPage />} />
             <Route path="readings" element={<ReadingsPage />} />
             <Route path="reports" element={<ReportsPage />} />
           </Route>
