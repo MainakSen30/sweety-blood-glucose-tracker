@@ -1,18 +1,37 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { ValueBars } from '../components/charts/ValueBars.js';
 import { Button } from '../components/ui/Button.js';
 import { BrandMark, PlusIcon } from '../components/ui/icons.js';
 
 /**
- * Static preview of the dashboard's rhythm card, rendered with the same
- * classes as the real one. Plausible, internally consistent demo data:
- * three readings (98, 122, 131 → average 117.0, lowest 98, highest 131)
- * and one empty slot to show the add affordance.
+ * Static preview of the app's own cards, rendered with the same classes as
+ * the real ones. Plausible, internally consistent demo data:
+ * - Today's rhythm: three readings (98, 122, 131 → average 117.0, lowest 98,
+ *   highest 131) and one empty slot to show the add affordance.
+ * - Month to date: 24 readings over 13 days, lowest 111, highest 125, mean
+ *   over all readings 117.7; the bars are the per-day averages.
  */
 const PREVIEW_SLOTS = [
   { short: 'Morning', full: 'Morning (fasting)', value: 98 },
   { short: 'Breakfast', full: 'After breakfast', value: 122 },
   { short: 'Lunch', full: 'After lunch', value: 131 },
   { short: 'Dinner', full: 'After dinner', value: null },
+];
+
+const MONTH_AVERAGE_POINTS = [
+  { label: '1', value: 114 },
+  { label: '2', value: 118 },
+  { label: '3', value: 111 },
+  { label: '4', value: 123 },
+  { label: '5', value: 116 },
+  { label: '6', value: 125 },
+  { label: '7', value: 117 },
+  { label: '8', value: 119 },
+  { label: '9', value: 113 },
+  { label: '10', value: 122 },
+  { label: '11', value: 116 },
+  { label: '12', value: 121 },
+  { label: '13', value: 115 },
 ];
 
 const FEATURES = [
@@ -50,7 +69,7 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-16 pt-10 sm:px-6 sm:pt-16">
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-4 pb-16 pt-10 sm:px-6 sm:pt-14">
         <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
           <div>
             <h1 className="text-4xl font-semibold tracking-tight text-ink sm:text-5xl sm:leading-[1.1]">
@@ -113,10 +132,53 @@ export default function LandingPage() {
                 </span>
               </p>
             </div>
+
+            <div className="mt-5 border-t border-line pt-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h2 className="text-lg font-semibold tracking-tight text-ink">Month to date</h2>
+                <span className="text-xs text-ink-soft">1–13 November 2026</span>
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4">
+                <div>
+                  <dd className="text-2xl font-semibold tabular-nums tracking-tight text-ink">
+                    24
+                  </dd>
+                  <dt className="mt-0.5 text-xs font-medium text-ink-soft">Readings</dt>
+                </div>
+                <div>
+                  <dd className="text-2xl font-semibold tabular-nums tracking-tight text-ink">
+                    117.7<span className="ml-1 text-sm font-normal text-ink-soft">mg/dL</span>
+                  </dd>
+                  <dt className="mt-0.5 text-xs font-medium text-ink-soft">Average</dt>
+                </div>
+                <div>
+                  <dd className="text-2xl font-semibold tabular-nums tracking-tight text-ink">
+                    111<span className="ml-1 text-sm font-normal text-ink-soft">mg/dL</span>
+                  </dd>
+                  <dt className="mt-0.5 text-xs font-medium text-ink-soft">Lowest</dt>
+                </div>
+                <div>
+                  <dd className="text-2xl font-semibold tabular-nums tracking-tight text-ink">
+                    125<span className="ml-1 text-sm font-normal text-ink-soft">mg/dL</span>
+                  </dd>
+                  <dt className="mt-0.5 text-xs font-medium text-ink-soft">Highest</dt>
+                </div>
+              </dl>
+              <p className="mt-5 text-xs font-medium text-ink-soft">
+                Daily averages (mg/dL) — only days with readings
+              </p>
+              <div className="mt-2">
+                <ValueBars
+                  points={MONTH_AVERAGE_POINTS}
+                  average={117.7}
+                  title="Average glucose per day, month to date"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="mt-16 grid gap-8 border-t border-line pt-8 sm:grid-cols-3 sm:gap-10">
+        <div className="mt-12 grid gap-8 border-t border-line pt-6 sm:grid-cols-3 sm:gap-10">
           {FEATURES.map((feature) => (
             <div key={feature.label}>
               <h3 className="text-sm font-semibold text-ink">{feature.label}</h3>
