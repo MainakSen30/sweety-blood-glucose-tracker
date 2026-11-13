@@ -4,28 +4,32 @@ Sweety is a full-stack web application that will let a diabetes patient record u
 glucose readings per day and review daily and monthly reports.
 
 This repository contains **Phase 0: project foundation**, **Phase 1: authentication and user
-foundation**, **Phase 2: blood glucose readings**, and **Phase 3: report generation and analytics**.
-It provides the monorepo, tooling, configuration, Docker-based development environment, a `users`
+foundation**, **Phase 2: blood glucose readings**, **Phase 3: report generation and analytics**, and
+**Phase 4: frontend implementation and visual design**. It provides the monorepo, tooling,
+configuration, Docker-based development environment, a `users`
 table, cookie-based JWT authentication (`register`, `login`, `me`, `logout`), a complete
-authenticated CRUD API for blood glucose readings, and daily / month-to-date / previous-month
-report endpoints backed by PostgreSQL aggregation — all with integration tests. Charts, a dashboard
-UI, and doctor roles are intentionally not implemented yet.
+authenticated CRUD API for blood glucose readings, daily / month-to-date / previous-month
+report endpoints backed by PostgreSQL aggregation, and the full React frontend — authentication
+screens, dashboard, reading management, and reports with visualisations. Doctor roles are
+intentionally not implemented.
 
 ## Where to find what
 
-| Looking for…                                            | Section                                                                                                                                |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0 scope                                           | [Phase scope → Phase 0 (foundation)](#phase-scope)                                                                                     |
-| Phase 1 — what was built & implementation notes         | [Phase scope → Phase 1](#phase-1-authentication-and-user-foundation) and [Phase 1 implementation notes](#phase-1-implementation-notes) |
-| Phase 2 — what was built & implementation notes         | [Phase scope → Phase 2](#phase-2-blood-glucose-readings) and [Phase 2 implementation notes](#phase-2-implementation-notes)             |
-| Phase 3 — what was built & implementation notes         | [Phase scope → Phase 3](#phase-3-report-generation-and-analytics) and [Phase 3 implementation notes](#phase-3-implementation-notes)    |
-| Report endpoints, empty behavior, rounding, date ranges | [Blood glucose reports](#blood-glucose-reports)                                                                                        |
-| API endpoints and payloads                              | [API](#api)                                                                                                                            |
-| Authentication flow, cookies, security, rate limiting   | [Authentication flow](#authentication-flow)                                                                                            |
-| Database schema and migrations                          | [Database and Drizzle](#database-and-drizzle)                                                                                          |
-| Reading data model, slots, validation, timezone         | [Blood glucose readings](#blood-glucose-readings)                                                                                      |
-| Running, testing, Docker, ports                         | [Running locally](#running-locally), [Testing setup](#testing-setup), [Docker development](#docker-development)                        |
-| Assumptions and known limitations                       | [Assumptions](#assumptions), [Security decisions and limitations](#security-decisions-and-limitations)                                 |
+| Looking for…                                            | Section                                                                                                                                       |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 scope                                           | [Phase scope → Phase 0 (foundation)](#phase-scope)                                                                                            |
+| Phase 1 — what was built & implementation notes         | [Phase scope → Phase 1](#phase-1-authentication-and-user-foundation) and [Phase 1 implementation notes](#phase-1-implementation-notes)        |
+| Phase 2 — what was built & implementation notes         | [Phase scope → Phase 2](#phase-2-blood-glucose-readings) and [Phase 2 implementation notes](#phase-2-implementation-notes)                    |
+| Phase 3 — what was built & implementation notes         | [Phase scope → Phase 3](#phase-3-report-generation-and-analytics) and [Phase 3 implementation notes](#phase-3-implementation-notes)           |
+| Phase 4 — what was built & implementation notes         | [Phase scope → Phase 4](#phase-4-frontend-implementation-and-visual-design) and [Phase 4 implementation notes](#phase-4-implementation-notes) |
+| Design system (colours, typography, motion)             | [Design system](#design-system)                                                                                                               |
+| Report endpoints, empty behavior, rounding, date ranges | [Blood glucose reports](#blood-glucose-reports)                                                                                               |
+| API endpoints and payloads                              | [API](#api)                                                                                                                                   |
+| Authentication flow, cookies, security, rate limiting   | [Authentication flow](#authentication-flow)                                                                                                   |
+| Database schema and migrations                          | [Database and Drizzle](#database-and-drizzle)                                                                                                 |
+| Reading data model, slots, validation, timezone         | [Blood glucose readings](#blood-glucose-readings)                                                                                             |
+| Running, testing, Docker, ports                         | [Running locally](#running-locally), [Testing setup](#testing-setup), [Docker development](#docker-development)                               |
+| Assumptions and known limitations                       | [Assumptions](#assumptions), [Security decisions and limitations](#security-decisions-and-limitations)                                        |
 
 ## Tech stack
 
@@ -867,6 +871,36 @@ Vitest's global setup applies the committed Drizzle migrations to the test datab
 Tests exercise the real Express application and database — they are not mocked at the HTTP or data
 layers.
 
+## Design system
+
+The client has a warm, calm health-tech identity: **cream background, dark olive typography**.
+
+| Token        | Value     | Use                                                                          |
+| ------------ | --------- | ---------------------------------------------------------------------------- |
+| `cream`      | `#F6F3E9` | Page background                                                              |
+| `surface`    | `#FFFEF8` | Cards, inputs                                                                |
+| `ink`        | `#343D27` | Primary text, values                                                         |
+| `ink-soft`   | `#6A7058` | Secondary text (darkened from the original `#777C68` to pass 4.5:1 on cream) |
+| `olive`      | `#596747` | Interactive accents, chart bars                                              |
+| `olive-dark` | `#343F2B` | Primary buttons, active nav, brand                                           |
+| `sage`       | `#DCE3D3` | Filled/selected states                                                       |
+| `beige`      | `#EAE4D4` | Empty-slot surfaces                                                          |
+| `line`       | `#E4E0D3` | 1px borders                                                                  |
+| `terracotta` | `#C98568` | Destructive actions and small accents only                                   |
+
+Tokens live in `@theme` in `apps/client/src/index.css` (Tailwind v4 CSS-first configuration) and are
+consumed as standard Tailwind colour utilities (`bg-cream`, `text-ink`, `border-line`, …).
+
+Typography is **Instrument Sans** (Google Fonts, one family, 400–700). Headings use tight tracking;
+every numeric value — readings, averages, counts — uses tabular numerals (`tabular-nums`) so
+columns and comparisons stay aligned. Rules of thumb: 1px borders for elevation (soft shadows only
+on the modal layer), 12–16px radii, no gradient text, no glass effects, no decorative illustrations.
+
+Motion is `motion/react` (the modern Framer Motion package), used only where CSS transitions are
+insufficient: page entrance, dialog enter/exit (200 ms ease-out, scale 0.97), report-tab crossfade,
+and one stagger-free dashboard entrance. Hover/press feedback is plain CSS. `prefers-reduced-motion`
+is honoured both globally (CSS) and in Motion (`useReducedMotion`).
+
 ## Phase scope
 
 ### Phase 0 (foundation)
@@ -1031,6 +1065,52 @@ mirroring the readings module):
 - **Known limitations.** No caching or materialized views (each report is one indexed query);
   `/api/reports/monthly` has no parameter to request a specific month (previous month only, per
   the assignment); averages are rounded for display — unrounded means are never persisted.
+
+### Phase 4 (frontend implementation and visual design)
+
+Included:
+
+- Cookie-session authentication screens (login, registration with confirmation) using the existing
+  auth API — no tokens in web storage
+- Authenticated route protection (`RequireAuth` / `GuestRoute`) with a loading state while the
+  session is resolved
+- Dashboard: time-aware greeting, the four-slot daily rhythm (the day's readings _are_ the daily
+  summary, with one-tap add on empty slots and edit on filled ones), month-to-date and
+  previous-month overview, recent readings, add/edit/delete with confirmation
+- Readings page: full history grouped by date, optional single-date filter, add/edit/delete
+- Reports page: daily / month-to-date / previous-month tabs, date pickers, summary statistics and
+  bar charts built from actual recorded readings only (no interpolation, no fabricated values, no
+  diagnostic range colouring)
+- Design system (cream/olive tokens, Instrument Sans, shared UI kit), responsive layouts, keyboard
+  and screen-reader affordances, `prefers-reduced-motion` support
+- Client unit tests for routing/redirects, date conversion, and the reading form
+
+Not included: doctor accounts, exports, notifications, diagnostic interpretations, pagination
+(the reading list is naturally small; the API sorts server-side).
+
+### Phase 4 implementation notes
+
+Phase 4 delivered the React frontend (`apps/client`):
+
+- **Architecture.** `context/auth.ts` (session context, `useAuth`) + `AuthContext.tsx`
+  (`AuthProvider`, `RequireAuth`, `GuestRoute`), `components/layout` (app shell, auth layout),
+  `components/ui` (Button, Field/Input, Dialog, Card, StatusNote, authored SVG icons),
+  `components/readings` (form dialog, grouped list, shared add/edit/delete dialog state),
+  `components/reports` + `components/charts`, `lib` (date, slots, chart, status-note helpers),
+  and five pages wired through React Router.
+- **Session.** `AuthProvider` resolves the session on load with `GET /api/auth/me` (401 →
+  unauthenticated). Login/register POST to the existing endpoints; the HTTP-only cookie remains
+  the only credential anywhere.
+- **Date format.** The client speaks the API's DD-MM-YYYY: HTML date inputs (YYYY-MM-DD) are
+  converted in `lib/date.ts`, and "today" is computed in Asia/Kolkata so the client never offers a
+  date the backend would reject as future.
+- **Data honesty.** Charts draw only recorded readings (per-day means for period reports, labelled
+  as such); empty reports show `—`, never `0`; no reference-range colouring or medical claims — the
+  API numbers are presented as recorded.
+- **Server errors.** API `details` arrays map onto form fields by path (`readingDate`, `slot`,
+  `value`), and 409 messages (duplicate slot, four-per-day limit) surface verbatim in the form.
+- **Test data note.** Verification runs create and then delete their own users; the dev database is
+  left as found.
 
 ## Assumptions
 

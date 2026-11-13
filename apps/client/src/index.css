@@ -1,7 +1,53 @@
 @import 'tailwindcss';
 
+/*
+ * Sweety design tokens — warm cream ground, dark olive ink.
+ * Secondary text is #6A7058 (not the brief's #777C68): the original fails the
+ * 4.5:1 body-text contrast floor on the cream background.
+ */
+@theme {
+  --color-cream: #f6f3e9;
+  --color-surface: #fffef8;
+  --color-ink: #343d27;
+  --color-ink-soft: #6a7058;
+  --color-olive: #596747;
+  --color-olive-dark: #343f2b;
+  --color-sage: #dce3d3;
+  --color-beige: #eae4d4;
+  --color-line: #e4e0d3;
+  --color-terracotta: #c98568;
+  --color-terracotta-ink: #8a4f2e;
+
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: var(--color-sage);
+  color: var(--color-olive-dark);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-olive);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
