@@ -6,7 +6,12 @@ import { listReadings } from '../services/readingsApi.js';
 import type { DailyReport, PeriodReport } from '../types/report.js';
 import type { Reading } from '../types/reading.js';
 import type { SafeUser } from '../types/user.js';
-import { formatLongDate, todayApiDate, currentHourInAppTimezone } from '../lib/date.js';
+import {
+  formatLongDate,
+  formatPeriodLabel,
+  todayApiDate,
+  currentHourInAppTimezone,
+} from '../lib/date.js';
 import { SLOT_ORDER, slotLabel, slotShortLabel } from '../lib/slots.js';
 import { useAuth } from '../context/auth.js';
 import { Card } from '../components/ui/Card.js';
@@ -176,14 +181,20 @@ export default function DashboardPage() {
           <div className="mt-4 border-t border-line pt-4">
             {summary.totalReadings > 0 ? (
               <p className="text-sm text-ink-soft">
-                Today's average{' '}
-                <strong className="font-semibold tabular-nums text-ink">
-                  {summary.average?.toFixed(1)} mg/dL
-                </strong>{' '}
-                · lowest{' '}
-                <strong className="font-semibold tabular-nums text-ink">{summary.lowest}</strong> ·
-                highest{' '}
-                <strong className="font-semibold tabular-nums text-ink">{summary.highest}</strong>
+                <span className="whitespace-nowrap">
+                  Today's average{' '}
+                  <strong className="font-semibold tabular-nums text-ink">
+                    {summary.average?.toFixed(1)} mg/dL
+                  </strong>
+                </span>{' '}
+                <span className="whitespace-nowrap">
+                  · lowest{' '}
+                  <strong className="font-semibold tabular-nums text-ink">{summary.lowest}</strong>
+                </span>{' '}
+                <span className="whitespace-nowrap">
+                  · highest{' '}
+                  <strong className="font-semibold tabular-nums text-ink">{summary.highest}</strong>
+                </span>
               </p>
             ) : (
               <p className="text-sm text-ink-soft">
@@ -196,7 +207,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
         <Card>
-          <h2 className="text-lg font-semibold tracking-tight text-ink">Your months</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-ink">Month by month</h2>
           <dl className="mt-4 space-y-4">
             <MonthStat
               label="Month to date"
@@ -282,7 +293,7 @@ function MonthStat({
       <div className="flex items-baseline justify-between gap-3">
         <dt className="text-sm font-medium text-ink">{label}</dt>
         <dd className="text-sm tabular-nums text-ink-soft">
-          {period.startDate} – {period.endDate}
+          {formatPeriodLabel(period.startDate, period.endDate)}
         </dd>
       </div>
       <dd className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-ink">

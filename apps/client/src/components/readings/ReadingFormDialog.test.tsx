@@ -16,10 +16,12 @@ function renderDialog() {
 }
 
 describe('ReadingFormDialog', () => {
-  it('shows client-side validation errors when submitted empty', async () => {
+  it('shows client-side validation errors when the form is emptied', async () => {
     const user = userEvent.setup();
     renderDialog();
 
+    // The date pre-fills with today; clear it to test the empty case.
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '' } });
     await user.click(screen.getByRole('button', { name: 'Add reading' }));
 
     expect(await screen.findByText('Please choose a date.')).toBeInTheDocument();

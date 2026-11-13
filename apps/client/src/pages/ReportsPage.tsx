@@ -4,7 +4,13 @@ import { getDailyReport, getMonthlyReport, getMonthToDateReport } from '../servi
 import { listReadings } from '../services/readingsApi.js';
 import type { DailyReport, PeriodReport } from '../types/report.js';
 import type { Reading } from '../types/reading.js';
-import { apiDateToInputValue, inputValueToApiDate, todayApiDate } from '../lib/date.js';
+import {
+  apiDateToInputValue,
+  formatLongDate,
+  formatPeriodLabel,
+  inputValueToApiDate,
+  todayApiDate,
+} from '../lib/date.js';
 import { dailyAveragePoints } from '../lib/chart.js';
 import { slotShortLabel } from '../lib/slots.js';
 import { Button, Spinner } from '../components/ui/Button.js';
@@ -176,7 +182,9 @@ function DailyReportView({
     <div className="space-y-6">
       <Card>
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <h2 className="text-lg font-semibold tracking-tight text-ink">{report.date}</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-ink">
+            {formatLongDate(report.date)}
+          </h2>
           <div className="w-44">
             <Field label="Report date">
               {(fieldProps) => (
@@ -247,7 +255,7 @@ function PeriodReportView({
       <Card>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <h2 className="text-lg font-semibold tracking-tight text-ink">
-            {report.period.startDate} – {report.period.endDate}
+            {formatPeriodLabel(report.period.startDate, report.period.endDate)}
           </h2>
           {showDatePicker ? (
             <div className="w-44">
