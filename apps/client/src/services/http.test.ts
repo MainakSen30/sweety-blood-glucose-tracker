@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiFetch } from './http.js';
+import { ApiError, apiFetch, SESSION_EXPIRED_EVENT } from './http.js';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -117,5 +117,18 @@ describe('apiFetch', () => {
       status: 503,
       message: 'Request failed with status 503',
     });
+  });
+
+  it('signals an expired session on a 401 response', async () => {
+    const listener = vi.fn();
+    window.addEventListener(SESSION_EXPIRED_EVENT, listener);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ message: 'Authentication required.' }, { status: 401 }),
+    );
+
+    await expect(apiFetch('/api/doctor/patients')).rejects.toBeInstanceOf(ApiError);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    window.removeEventListener(SESSION_EXPIRED_EVENT, listener);
   });
 });

@@ -13,15 +13,12 @@ const PATIENT_NAV = [
   { to: '/care-team', label: 'Care team' },
 ];
 
-const DOCTOR_NAV = [{ to: '/patients', label: 'Patients' }];
-
-/** Authenticated application shell: brand, primary navigation, account. */
-export function AppLayout() {
+/** Patient application shell: brand, patient navigation, account. */
+export function PatientLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const reduceMotion = useReducedMotion();
   const homePath = user ? roleHomePath(user.role) : '/';
-  const navItems = user?.role === 'doctor' ? DOCTOR_NAV : PATIENT_NAV;
 
   // Announce page changes to screen readers as the route swaps.
   useEffect(() => {
@@ -40,7 +37,7 @@ export function AppLayout() {
 
           <nav aria-label="Main" className="order-3 -mx-1 w-full sm:order-none sm:mx-0 sm:w-auto">
             <ul className="flex gap-1">
-              {navItems.map((item) => (
+              {PATIENT_NAV.map((item) => (
                 <li key={item.to}>
                   <NavLink
                     to={item.to}

@@ -28,5 +28,5 @@ export interface LoginInput {
 
 /** Landing route for each role after authentication. */
 export function roleHomePath(role: UserRole): string {
-  return role === 'doctor' ? '/patients' : '/today';
+  return role === 'doctor' ? '/doctor/dashboard' : '/today';
 }

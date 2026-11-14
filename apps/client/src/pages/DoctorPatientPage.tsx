@@ -4,19 +4,23 @@ import {
   getPatientDailyReport,
   getPatientMonthToDateReport,
   getPatientMonthlyReport,
+  getPatientReportJobStatus,
   listAllPatientReadings,
   listPatientReadings,
   listPatients,
+  submitPatientReportJob,
   type PatientSummary,
 } from '../services/doctorApi.js';
-import type { DailyReport, PeriodReport } from '../types/report.js';
+import type { DailyReport, PeriodReport, ReportJobStatus } from '../types/report.js';
 import type { PaginatedReadings, Reading } from '../types/reading.js';
 import { apiDateToInputValue, inputValueToApiDate, todayApiDate } from '../lib/date.js';
-import { Button, LoadingState } from '../components/ui/Button.js';
+import { Button, LoadingState, Spinner } from '../components/ui/Button.js';
 import { Card } from '../components/ui/Card.js';
 import { Field, Input } from '../components/ui/Input.js';
+import { ReadonlyPill } from '../components/doctor/DoctorUi.js';
 import { ReadingsList } from '../components/readings/ReadingsList.js';
 import { ReadingsPagination } from '../components/readings/ReadingsPagination.js';
+import { ArrowLeftIcon } from '../components/ui/icons.js';
 import { DailyReportView, PeriodReportView } from './ReportsPage.js';
 
 type PatientTab = 'readings' | 'daily' | 'month-to-date' | 'monthly';
@@ -54,6 +58,10 @@ export default function DoctorPatientPage() {
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [reloadNonce, setReloadNonce] = useState(0);
+
+  const [job, setJob] = useState<ReportJobStatus | null>(null);
+  const [isSubmittingJob, setIsSubmittingJob] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!patientId) return;
@@ -144,28 +152,172 @@ export default function DoctorPatientPage() {
     };
   }, [patientId, tab, dailyDate, mtdDate, dateFilter, page, pageSize, reloadNonce]);
 
+  const jobId = job?.jobId;
+  const jobStatus = job?.status;
+
+  useEffect(() => {
+    if (!patientId || !jobId || !jobStatus) return;
+    if (jobStatus === 'completed' || jobStatus === 'failed') return;
+
+    let cancelled = false;
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const status = await getPatientReportJobStatus(patientId, jobId);
+        if (cancelled) return;
+        setJob((previous) => (previous ? { ...previous, ...status } : status));
+
+        if (status.status === 'completed') {
+          window.clearInterval(intervalId);
+          // Re-run the visible tab's normal fetch instead of trusting the job
+          // payload; the report endpoint remains the source of truth.
+          setReloadNonce((nonce) => nonce + 1);
+        } else if (status.status === 'failed') {
+          window.clearInterval(intervalId);
+        }
+      } catch {
+        if (!cancelled) {
+          window.clearInterval(intervalId);
+          setJobError('Could not check job status. Try again.');
+        }
+      }
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [patientId, jobId, jobStatus]);
+
   if (!patientId) {
-    return <Navigate to="/patients" replace />;
+    return <Navigate to="/doctor/patients" replace />;
   }
 
   const retry = () => setReloadNonce((nonce) => nonce + 1);
 
+  async function handleGenerate() {
+    if (!patientId || tab === 'readings') return;
+
+    setIsSubmittingJob(true);
+    setJobError(null);
+
+    try {
+      const date =
+        tab === 'monthly' ? undefined : inputValueToApiDate(tab === 'daily' ? dailyDate : mtdDate);
+      const submission = await submitPatientReportJob(patientId, {
+        reportType: tab,
+        ...(date ? { date } : {}),
+      });
+      setJob({ jobId: submission.jobId, status: submission.status, progress: null });
+    } catch (err) {
+      setJobError(err instanceof Error ? err.message : 'Could not queue report generation.');
+    } finally {
+      setIsSubmittingJob(false);
+    }
+  }
+
+  const jobActive =
+    job !== null &&
+    (job.status === 'waiting' || job.status === 'active' || job.status === 'delayed');
+
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          to="/patients"
-          className="text-sm font-medium text-olive underline underline-offset-2 hover:text-olive-dark"
-        >
-          ← All patients
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-          {patient?.name ?? 'Patient'}
-        </h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          {patient?.email ? `${patient.email} · ` : ''}Read-only access granted by the patient.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <Link
+            to="/doctor/patients"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-olive underline underline-offset-2 hover:text-olive-dark"
+          >
+            <ArrowLeftIcon className="size-3.5" />
+            All patients
+          </Link>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+              {patient?.name ?? 'Patient'}
+            </h1>
+            <ReadonlyPill />
+          </div>
+          <p className="mt-1 text-sm text-ink-soft">
+            {patient?.email ? `${patient.email} · ` : ''}Read-only access granted by the patient.
+          </p>
+        </div>
+
+        {tab !== 'readings' ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void handleGenerate()}
+            disabled={jobActive}
+            loading={isSubmittingJob}
+          >
+            Generate in background
+          </Button>
+        ) : null}
       </div>
+
+      {job || jobError ? (
+        <Card className="border-olive/30 bg-sage/20 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-olive-dark">Background report</span>
+                {job ? (
+                  <span
+                    className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium ${
+                      job.status === 'completed'
+                        ? 'bg-olive-dark text-cream'
+                        : job.status === 'failed'
+                          ? 'bg-terracotta text-cream'
+                          : 'bg-olive/20 text-olive-dark'
+                    }`}
+                  >
+                    {job.status === 'waiting'
+                      ? 'Queued'
+                      : job.status === 'active'
+                        ? 'Processing'
+                        : job.status}
+                  </span>
+                ) : null}
+              </div>
+              {job?.jobId ? (
+                <p className="font-mono text-xs text-ink-soft">Job ID: {job.jobId}</p>
+              ) : null}
+              {job?.progress !== null && job?.progress !== undefined ? (
+                <p className="text-xs text-ink-soft">Progress: {job.progress}%</p>
+              ) : null}
+              {job?.status === 'failed' ? (
+                <p className="text-xs text-terracotta-ink">
+                  {job.failedReason ?? 'Report generation failed.'}
+                </p>
+              ) : null}
+              {jobError ? <p className="text-xs text-terracotta-ink">{jobError}</p> : null}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {jobActive ? (
+                <span className="flex items-center gap-2 text-xs text-ink-soft">
+                  <Spinner className="size-3.5 text-olive" />
+                  Generating
+                </span>
+              ) : job?.status === 'completed' ? (
+                <span className="text-xs font-medium text-olive-dark">Report refreshed</span>
+              ) : null}
+              {!jobActive && (job || jobError) ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setJob(null);
+                    setJobError(null);
+                  }}
+                >
+                  Dismiss
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <div
         role="tablist"
