@@ -20,6 +20,19 @@ services:
     networks:
       - sweety-network
 
+  redis:
+    image: redis:7-alpine
+    # Cache data is disposable, so persistence is deliberately off.
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli ping | grep PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - sweety-network
+
   server:
     build:
       context: .
@@ -34,12 +47,16 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
       AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
       AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-20}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-60}
     ports:
       - '${SERVER_PORT:-5000}:5000'
     volumes:
       - ./apps/server/src:/app/apps/server/src
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test:

@@ -4,9 +4,10 @@ SWEETy is a full-stack web application that lets a person with diabetes record u
 glucose readings per day across four named time slots, and review daily, month-to-date, and
 previous-month reports with summary statistics.
 
-This repository covers **Phase 0 through Phase 7**: monorepo foundation, authentication,
+This repository covers **Phase 0 through Phase 11**: monorepo foundation, authentication,
 readings CRUD, report generation, React frontend, testing and hardening, submission
-preparation, and paginated readings history.
+preparation, paginated readings history, advanced reports and data visualization, Docker
+reviewer readiness, reading-form test coverage, and Redis-backed report caching.
 
 ---
 
@@ -19,6 +20,7 @@ preparation, and paginated readings history.
 - [Architecture](#architecture)
 - [Repository structure](#repository-structure)
 - [Prerequisites](#prerequisites)
+- [Run SWEETy Locally with Docker](#run-sweety-locally-with-docker)
 - [Local installation](#local-installation)
 - [Database setup](#database-setup)
 - [Seed data](#seed-data)
@@ -109,7 +111,7 @@ Main user workflows:
 
 ### Testing
 
-- 271 passing tests across 20 test files (see CI output for current results)
+- 329 passing tests across 22 test files (see CI output for current results)
 - Server integration tests using Supertest against a real PostgreSQL test database
 - Client unit tests with Vitest and React Testing Library
 - TypeScript strict mode — zero type errors
@@ -275,6 +277,164 @@ sweety/
 
 ---
 
+## Run SWEETy Locally with Docker
+
+This is the fastest way to try SWEETy: no Node.js or local PostgreSQL required — the Compose stack
+builds and runs everything in containers. All commands below have been verified against this
+repository.
+
+### Prerequisites
+
+- **Docker Desktop** or **Docker Engine** with **Compose v2** (`docker compose version`)
+- **Git**
+
+### Step 1: Clone the repository
+
+```bash
+git clone https://github.com/MainakSen30/sweety-blood-glucose-tracker.git
+cd sweety-blood-glucose-tracker
+```
+
+### Step 2: Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set:
+
+| Variable            | Required | Notes                                                                                              |
+| ------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`        | **Yes**  | At least 32 characters. Generate one: `openssl rand -hex 32`. Compose refuses to start without it. |
+| `POSTGRES_PASSWORD` | Yes      | `.env.example` ships the placeholder `change_me` — replace it.                                     |
+
+All other variables have working local defaults (`POSTGRES_DB=sweety`, `POSTGRES_USER=sweety`,
+`POSTGRES_PORT=5432`, `SERVER_PORT=5000`, `CLIENT_PORT=5173`, …). The full list is documented in
+the [Environment variable reference](#environment-variable-reference). `.env` is git-ignored and
+is never copied into Docker images.
+
+### Step 3: Start the application
+
+```bash
+docker compose up -d --build
+```
+
+Builds two development images and starts four services in dependency order, gated by health
+checks: `postgres` (PostgreSQL 17) and `redis` (Redis 7, report cache) → `server` (Express API) →
+`client` (Vite dev server).
+
+```bash
+docker compose ps   # wait until all four services show "(healthy)"
+```
+
+Exposed ports (host → container, configurable in `.env`):
+
+| Service    | Host port              | Container port | Notes                                 |
+| ---------- | ---------------------- | -------------- | ------------------------------------- |
+| `client`   | `CLIENT_PORT` (5173)   | 5173           |                                       |
+| `server`   | `SERVER_PORT` (5000)   | 5000           |                                       |
+| `postgres` | `POSTGRES_PORT` (5432) | 5432           |                                       |
+| `redis`    | — (internal only)      | 6379           | Report cache; not exposed to the host |
+
+Source code is bind-mounted into the containers, so both apps hot-reload as you edit.
+
+### Step 4: Initialize the database
+
+```bash
+docker compose exec server npm run db:migrate
+```
+
+This applies the committed Drizzle migrations inside the server container (Compose injects
+`DATABASE_URL`, so it connects to the `postgres` service automatically). The command is idempotent
+— re-running it after the schema exists reports success without changes. Migrations must complete
+successfully before you use the application. See [Database setup](#database-setup) for details.
+
+### Step 5: Seed demo data (optional)
+
+Seeding is optional but recommended for reviewers who want to explore the dashboard and charts
+with sample data. It is explicitly opt-in — nothing is seeded automatically:
+
+```bash
+docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx /app/apps/server/src/database/seed.ts"
+```
+
+The script is idempotent and safe to re-run; it never deletes or truncates existing data. Demo
+credentials (confirmed against the seed script):
+
+| Field    | Value               |
+| -------- | ------------------- |
+| Email    | `demo@sweety.local` |
+| Password | `Demo1234!`         |
+
+Details and safety restrictions: [Seed data](#seed-data).
+
+### Step 6: Open the application
+
+- **Frontend:** <http://localhost:5173> — log in with the demo credentials above (or register a
+  new account)
+- **API health:** <http://localhost:5173/api/health> (through the Vite proxy) or
+  <http://localhost:5000/api/health> (direct)
+- **Database from host tools:** `localhost:5432` (or your `POSTGRES_PORT`)
+
+### Step 7: Useful Docker commands
+
+```bash
+docker compose up -d --build   # start all services (detached, build images)
+docker compose ps              # container status and health
+docker compose logs -f         # follow logs (add: server / client / postgres)
+docker compose restart         # restart all containers
+docker compose stop            # stop containers (keep data)
+docker compose down            # stop and remove containers + network (data volume PRESERVED)
+docker compose down -v         # also delete the postgres data volume (DESTRUCTIVE)
+```
+
+> **Warning:** `docker compose down -v` deletes the named volume `sweety_postgres_data`, which
+> contains all persisted application data — accounts and readings included. Use `docker compose
+down` for routine cleanup; only run `down -v` when you intend to erase the database.
+>
+> Data survives container restarts and container recreation: PostgreSQL stores its files in the
+> named volume, not the container filesystem, so restarting the stack (or recreating just the
+> `postgres` container with `docker compose up -d --force-recreate --no-deps postgres`) keeps all
+> data.
+
+### Troubleshooting
+
+**Port conflicts.** If a host port is taken, override it in `.env` before `docker compose up`:
+`SERVER_PORT`, `CLIENT_PORT`, or `POSTGRES_PORT` (e.g. on macOS set `SERVER_PORT=5001` when the
+AirPlay Receiver occupies port 5000). Then reopen the frontend at the new `CLIENT_PORT` and set
+`CLIENT_URL=http://localhost:<CLIENT_PORT>` so CORS accepts the browser origin.
+
+**Invalid or missing JWT secret.** Compose fails fast with
+`required variable JWT_SECRET is missing a value` if `JWT_SECRET` is unset, and the server exits
+with `JWT_SECRET must be at least 32 characters long` if the value is too short. Set a ≥32-character
+value in `.env` and run `docker compose up -d` again.
+
+**Database connection failures.** Check `docker compose ps` — `postgres` must be `(healthy)`.
+Inspect `docker compose logs postgres` for password/name mismatches against `POSTGRES_*` in
+`.env`. If you changed `POSTGRES_PASSWORD` after the first start, the old value persists in the
+volume; run `docker compose down -v` to reset (erases data) or keep the old password.
+
+**Migration failures.** Re-run `docker compose exec server npm run db:migrate` and read the
+output; `drizzle-kit` prints the failing statement. Ensure the stack is up (`docker compose ps`)
+and that `JWT_SECRET`/`POSTGRES_*` in `.env` match what the stack was first started with.
+
+**Frontend API proxy failures.** The client proxies `/api` to the `server` service
+(`VITE_API_PROXY_TARGET=http://server:5000`, set by Compose). If API calls fail, verify the server
+is healthy and check `docker compose logs server`.
+
+**Authentication cookie problems.** The session cookie is `HttpOnly; SameSite=Lax`, issued by the
+server at the origin `CLIENT_URL` (default `http://localhost:5173`). Browse the app at exactly
+<http://localhost:5173> (not `127.0.0.1` or another hostname) so the cookie matches the origin.
+Cookies and JWT tokens are stateless, so they survive container restarts until expiry
+(`JWT_EXPIRES_IN`, default 1 hour).
+
+**Volume or permission issues.** The data volume is `sweety_postgres_data`
+(`docker volume inspect sweety_postgres_data`). If PostgreSQL fails to start after an aborted
+run, check its logs; as a last resort `docker compose down -v` resets the volume — this erases
+all stored data.
+
+---
+
 ## Local installation
 
 ```bash
@@ -317,6 +477,15 @@ docker compose up -d postgres
 ```
 
 then run migrations against `localhost` using the mapped port.
+
+When the full Compose stack is running, migrations can instead be applied inside the server
+container (no host `DATABASE_URL` needed — Compose injects it):
+
+```bash
+docker compose exec server npm run db:migrate
+```
+
+See [Run SWEETy Locally with Docker](#run-sweety-locally-with-docker) for the complete workflow.
 
 ### Local PostgreSQL setup (without Docker)
 
@@ -419,16 +588,20 @@ npm run dev:client   # Vite dev server
 
 ### Docker Compose
 
+The complete reviewer walkthrough — clone → `.env` → startup → migrations → optional demo seed →
+open the app — lives in [Run SWEETy Locally with Docker](#run-sweety-locally-with-docker).
+
 ```bash
 docker compose up --build
 ```
 
-Starts three services: `postgres` (PostgreSQL 17), `server` (Express API), and `client` (Vite).
-Services start in dependency order with health checks.
+Starts four services: `postgres` (PostgreSQL 17), `redis` (report cache), `server` (Express API),
+and `client` (Vite). Services start in dependency order with health checks.
 
 - Frontend: `http://localhost:5173`
 - API health: `http://localhost:5000/api/health`
 - PostgreSQL from host tools: `localhost:5432` (or `POSTGRES_PORT` if overridden)
+- Redis is internal to the Compose network (no host port); reports still work when it is down
 
 ```bash
 docker compose up -d --build    # run in background
@@ -447,6 +620,83 @@ VITE_API_PROXY_TARGET=http://localhost:5001
 ```
 
 For Docker, set only `SERVER_PORT=5001` — the internal port 5000 is unaffected.
+
+---
+
+## Report caching (Redis)
+
+The three report endpoints (`/api/reports/daily`, `/api/reports/month-to-date`,
+`/api/reports/monthly`) use a Redis **cache-aside** cache. The design principle:
+**PostgreSQL is the source of truth; Redis is a disposable performance optimization.**
+
+### Architecture
+
+- On a report request the server reads the user's cache version from Redis, builds a versioned
+  key, and returns the cached report on a hit — the PostgreSQL query is skipped entirely.
+- On a miss the report is computed by the existing reporting service from PostgreSQL, stored in
+  Redis with a TTL, and returned. Report calculation logic lives only in PostgreSQL-backed code;
+  the cache never computes or alters reports.
+- Every cache operation is best-effort: if Redis is unavailable, the error is logged and counted,
+  and the report is computed from PostgreSQL as usual. The user never sees a cache failure, and
+  `/api/health` stays `ok` (Redis state is reported informationally in its `cache` object).
+- With `REDIS_URL` unset, caching is disabled entirely and reports always come from PostgreSQL.
+
+### Cache keys and isolation
+
+```
+sweety:v1:reports:u{userId}:v{version}:daily:{YYYY-MM-DD}
+sweety:v1:reports:u{userId}:v{version}:month-to-date:{YYYY-MM-DD}
+sweety:v1:reports:u{userId}:v{version}:monthly:{start}:{end}
+```
+
+- Keys always use the **authenticated user id** from the auth middleware — never a query
+  parameter — so users cannot read each other's cached reports.
+- Dates are normalized internal `YYYY-MM-DD`; the monthly key embeds its computed period so an
+  Asia/Kolkata midnight rollover produces a fresh key.
+- The `v{version}` component is the user's invalidation generation counter.
+
+### TTL
+
+Every entry expires after `REDIS_CACHE_TTL_SECONDS` (default **60**). Report data changes only
+when a reading changes, so a short TTL keeps worst-case staleness bounded while absorbing
+repeated dashboard/report polling.
+
+### Invalidation
+
+After every **successful** reading mutation (create, update, delete), the user's version counter
+is incremented. New reads then build keys with the new version and miss the cache, repopulating it
+from PostgreSQL. Old entries are orphaned and expire within the TTL — no wildcard deletions.
+
+Consistency guarantees:
+
+- A mutation that fails (validation, duplicate slot, daily limit) never invalidates anything.
+- If Redis is down during a mutation, the mutation still succeeds. Reads also fail while Redis is
+  down, so reports are served fresh from PostgreSQL.
+- The only staleness window is a _transient_ invalidation failure while Redis is otherwise
+  reachable (or an invalidation that fails during an outage and Redis recovers before the next
+  read): a cached report can then be served for at most `REDIS_CACHE_TTL_SECONDS` (60s) before it
+  self-corrects. This is the accepted cache-aside trade-off.
+
+### Clearing the cache safely
+
+The cache is disposable — flush it at any time without affecting application correctness:
+
+```bash
+docker compose exec redis redis-cli FLUSHDB   # wipes only cache keys
+docker compose restart redis                  # or simply restart Redis
+```
+
+### Troubleshooting
+
+- **Reports slow / cache disabled:** `GET /api/health` → `cache.redis` shows `disabled` (no
+  `REDIS_URL`), `connecting` (still connecting), `ready`, or `down`. Check
+  `docker compose ps redis` and `docker compose logs server` for `Redis cache` lines.
+- **Redis container unavailable:** start it with `docker compose up -d redis`. The API keeps
+  serving reports from PostgreSQL in the meantime.
+- **Suspected stale data:** `docker compose exec redis redis-cli FLUSHDB` forces every report to
+  recompute; also check the `hits`/`misses` counters on `/api/health`.
+- **`errors` counter increasing:** Redis is reachable but commands fail (or connections flap) —
+  reports still work; inspect `docker compose logs server`.
 
 ---
 
@@ -798,6 +1048,10 @@ runs, so the test schema always matches the repository.
   aggregation, rounding, two-user isolation
 - Report chart data: individual readings without aggregation, all four slots, inclusive period
   boundaries, deterministic ordering, user scoping, and empty periods
+- Report caching: cache hits that skip the PostgreSQL report query, user-scoped key isolation,
+  create/update/delete invalidation, failed-mutation cache preservation, and transparent
+  PostgreSQL fallback on Redis read/write/invalidation/connection failures (unit tests plus
+  full-app integration tests with a Redis test double)
 - Client report charts: trend points from real API data, same-day observations preserved, no trend
   line for a single reading, donut counts/percentages, tab and date changes, empty/loading/error
   states, and the existing daily-average bar chart
@@ -958,6 +1212,38 @@ is preserved. Both new charts are hand-drawn SVG/CSS components — no charting 
 added — with responsive stacking, labelled loading/empty/error states, and text equivalents for
 assistive technologies.
 
+### Phase 9 — Docker audit and reviewer readiness
+
+End-to-end audit and verification of the existing Docker Compose developer/reviewer experience
+(no infrastructure rewrite). Compose now fails fast when `JWT_SECRET` is missing instead of
+passing an empty value to the server. The complete local workflow — clone, `.env`,
+`docker compose up -d --build`, in-container migrations, explicitly opt-in demo seed, open the
+app — is documented in [Run SWEETy Locally with Docker](#run-sweety-locally-with-docker) and was
+verified end-to-end: image builds, service health gating, migrations (idempotent, verified on a
+fresh database via an isolated disposable stack with no auto-seeding), login/logout with
+HTTP-only cookies through the Vite proxy, full readings CRUD with domain-rule enforcement and
+ownership isolation, reports and pagination, and data persistence across container restarts and
+recreation of the `postgres` container on the named volume.
+
+### Phase 10 — Frontend testing with React Testing Library
+
+User-focused test coverage for the reading form and its workflows: rendering and accessible
+naming, validation and boundary values (40–600 mg/dL), slot selection, `Asia/Kolkata` date
+defaulting and `DD-MM-YYYY` conversion, create/edit workflows through the dialog and the
+Readings page, API failure handling (400/401/409/500/network) with value retention and form
+re-enabling, pending-state double-submission prevention, and field-error `aria` association.
+The client suite grew from 63 to 91 tests with no application-code changes.
+
+### Phase 11 — Redis report caching
+
+Cache-aside Redis caching for the three report endpoints, with PostgreSQL remaining the source
+of truth: versioned, user-scoped cache keys built from the authenticated identity, a
+configurable 60-second TTL, and user-version-counter invalidation after every successful reading
+mutation. Redis failures (read, write, invalidation, connection) degrade transparently to
+PostgreSQL; caching is disabled entirely when `REDIS_URL` is unset. Docker Compose gained an
+internal-only Redis 7 service with no persistence, and `/api/health` reports cache status and
+hit/miss/error counters informationally.
+
 ---
 
 ## Environment variable reference
@@ -981,3 +1267,5 @@ assistive technologies.
 | `CLIENT_PORT`               | For Docker  | Host port mapped to container 5173                            | `5173`                  |
 | `VITE_API_PROXY_TARGET`     | No          | Vite proxy target for `/api` requests                         | `http://localhost:5000` |
 | `SEED_DEMO_DATA`            | For seeding | Must be `true` to allow seed script to run                    | unset                   |
+| `REDIS_URL`                 | No          | Redis for report caching; unset disables caching              | unset                   |
+| `REDIS_CACHE_TTL_SECONDS`   | No          | Report cache entry expiration (positive whole seconds)        | `60`                    |

@@ -32,6 +32,20 @@ const envSchema = z.object({
     .int()
     .min(1, 'AUTH_RATE_LIMIT_MAX must be at least 1')
     .default(20),
+  // Redis is optional: report caching is enabled only when REDIS_URL is set.
+  // Unset (or invalid) means reports are always served from PostgreSQL.
+  REDIS_URL: z
+    .url()
+    .refine(
+      (value) => value.startsWith('redis://') || value.startsWith('rediss://'),
+      'REDIS_URL must be a redis:// or rediss:// connection string',
+    )
+    .optional(),
+  REDIS_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int('REDIS_CACHE_TTL_SECONDS must be a whole number of seconds')
+    .min(1, 'REDIS_CACHE_TTL_SECONDS must be at least 1 second')
+    .default(60),
 });
 
 const parsedEnvironment = envSchema.safeParse(process.env);

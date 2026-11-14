@@ -1,7 +1,11 @@
 import type { Request, Response } from 'express';
 import { HttpError } from '../../utils/errors.js';
 import { formatValidationIssues } from '../../utils/validation.js';
-import { getDailyReport, getMonthToDateReport, getPreviousMonthReport } from './reports.service.js';
+import {
+  getDailyReportCached,
+  getMonthToDateReportCached,
+  getPreviousMonthReportCached,
+} from './reports.cache.js';
 import { reportDateQuerySchema } from './reports.validation.js';
 
 /**
@@ -21,7 +25,7 @@ export async function daily(request: Request, response: Response): Promise<Respo
     });
   }
 
-  const report = await getDailyReport(userId, parsedQuery.data.date);
+  const report = await getDailyReportCached(userId, parsedQuery.data.date);
   return response.status(200).json(report);
 }
 
@@ -37,13 +41,13 @@ export async function monthToDate(request: Request, response: Response): Promise
     });
   }
 
-  const report = await getMonthToDateReport(userId, parsedQuery.data.date);
+  const report = await getMonthToDateReportCached(userId, parsedQuery.data.date);
   return response.status(200).json(report);
 }
 
 export async function monthly(request: Request, response: Response): Promise<Response> {
   const userId = requireUserId(request);
-  const report = await getPreviousMonthReport(userId);
+  const report = await getPreviousMonthReportCached(userId);
   return response.status(200).json(report);
 }
 

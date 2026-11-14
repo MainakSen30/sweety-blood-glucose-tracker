@@ -1,4 +1,5 @@
 import { HttpError } from '../../utils/errors.js';
+import { invalidateUserReportCache } from '../../cache/reportCache.js';
 import {
   countReadings,
   countReadingsForDate,
@@ -41,6 +42,10 @@ export async function createReading(
     slot: input.slot,
     value: input.value,
   });
+
+  // The mutation is durable — the cache bump is best-effort and cannot fail
+  // the request. A failed bump leaves stale entries to expire within the TTL.
+  await invalidateUserReportCache(userId);
 
   return toReadingDto(reading);
 }
@@ -131,6 +136,8 @@ export async function updateUserReading(
     throw new HttpError(404, READING_NOT_FOUND_MESSAGE);
   }
 
+  await invalidateUserReportCache(userId);
+
   return toReadingDto(updated);
 }
 
@@ -140,4 +147,6 @@ export async function deleteUserReading(userId: string, id: string): Promise<voi
   if (!deleted) {
     throw new HttpError(404, READING_NOT_FOUND_MESSAGE);
   }
+
+  await invalidateUserReportCache(userId);
 }
