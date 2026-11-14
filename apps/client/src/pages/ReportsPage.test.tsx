@@ -235,6 +235,31 @@ describe('ReportsPage charts', () => {
     expect(screen.queryByRole('heading', { name: 'Glucose trends' })).not.toBeInTheDocument();
   });
 
+  it('never shows the previous period while the new tab is loading', async () => {
+    const user = userEvent.setup();
+    let resolveMtd: (value: PeriodReport) => void = () => {};
+    vi.mocked(reportsApi.getMonthToDateReport).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveMtd = resolve;
+      }),
+    );
+
+    render(<ReportsPage />);
+    await screen.findByRole('heading', { name: '12 November 2026', level: 2 });
+
+    await user.click(screen.getByRole('tab', { name: 'Month to date' }));
+
+    expect(await screen.findByRole('status', { name: 'Loading report' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: '12 November 2026', level: 2 }),
+    ).not.toBeInTheDocument();
+
+    resolveMtd(MTD_REPORT);
+    expect(
+      await screen.findByRole('heading', { name: '1–12 November 2026', level: 2 }),
+    ).toBeInTheDocument();
+  });
+
   it('renders the four slot categories from actual counts', async () => {
     render(<ReportsPage />);
     await screen.findByRole('heading', { name: 'Glucose trends' });

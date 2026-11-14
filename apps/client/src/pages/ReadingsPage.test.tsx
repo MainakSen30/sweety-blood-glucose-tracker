@@ -1,4 +1,4 @@
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ReadingsPage from './ReadingsPage.js';
@@ -61,6 +61,98 @@ function makePage({
     },
   };
 }
+
+describe('ReadingsPage reading workflows', () => {
+  it('creates a reading through the dialog, refreshes the list, and confirms', async () => {
+    const user = userEvent.setup();
+    vi.mocked(readingsApi.listReadings).mockImplementation(async ({ page = 1, limit = 20 } = {}) =>
+      makePage({ page, limit, total: 2 }),
+    );
+    vi.mocked(readingsApi.createReading).mockResolvedValue(makeReading('reading-new'));
+
+    render(<ReadingsPage />);
+    await screen.findByText('Page 1 of 1');
+
+    await user.click(screen.getByRole('button', { name: 'Add reading' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add reading' });
+
+    fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-01-15' } });
+    fireEvent.change(within(dialog).getByLabelText('Glucose value'), { target: { value: '121' } });
+    await user.selectOptions(within(dialog).getByLabelText('Reading slot'), 'after_dinner');
+    await user.click(within(dialog).getByRole('button', { name: 'Add reading' }));
+
+    await waitFor(() =>
+      expect(readingsApi.createReading).toHaveBeenCalledWith({
+        readingDate: '15-01-2026',
+        slot: 'after_dinner',
+        value: 121,
+      }),
+    );
+    expect(await screen.findByText('Readings updated.')).toBeInTheDocument();
+    // The mutation triggers a reload of the list.
+    await waitFor(() => expect(readingsApi.listReadings).toHaveBeenCalledTimes(2));
+  });
+
+  it('edits a reading through the dialog and submits the changed values', async () => {
+    const user = userEvent.setup();
+    const existing = makeReading('reading-1', 100);
+    vi.mocked(readingsApi.listReadings).mockImplementation(async ({ page = 1, limit = 20 } = {}) =>
+      makePage({ page, limit, total: 1, data: [existing] }),
+    );
+    vi.mocked(readingsApi.updateReading).mockResolvedValue({
+      ...existing,
+      value: 130,
+      slot: 'after_dinner',
+    });
+
+    render(<ReadingsPage />);
+    await screen.findByText('Page 1 of 1');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Edit morning (fasting) reading on 12-11-2026' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Edit reading' });
+
+    // The dialog is populated from the row that was clicked.
+    expect(within(dialog).getByLabelText('Glucose value')).toHaveValue(100);
+    expect(within(dialog).getByLabelText('Reading slot')).toHaveValue('morning');
+
+    fireEvent.change(within(dialog).getByLabelText('Glucose value'), { target: { value: '130' } });
+    await user.selectOptions(within(dialog).getByLabelText('Reading slot'), 'after_dinner');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() =>
+      expect(readingsApi.updateReading).toHaveBeenCalledWith('reading-1', {
+        readingDate: '12-11-2026',
+        slot: 'after_dinner',
+        value: 130,
+      }),
+    );
+    expect(await screen.findByText('Readings updated.')).toBeInTheDocument();
+  });
+
+  it('keeps the reading when a delete is cancelled', async () => {
+    const user = userEvent.setup();
+    const existing = makeReading('reading-1', 100);
+    vi.mocked(readingsApi.listReadings).mockImplementation(async ({ page = 1, limit = 20 } = {}) =>
+      makePage({ page, limit, total: 1, data: [existing] }),
+    );
+
+    render(<ReadingsPage />);
+    await screen.findByText('Page 1 of 1');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Delete morning (fasting) reading on 12-11-2026' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Delete reading' });
+    expect(dialog).toHaveTextContent('100 mg/dL');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Keep reading' }));
+
+    expect(readingsApi.deleteReading).not.toHaveBeenCalled();
+    expect(await screen.findByText('Page 1 of 1')).toBeInTheDocument();
+  });
+});
 
 describe('ReadingsPage pagination', () => {
   it('renders the range and page controls, with Previous disabled on page 1', async () => {
