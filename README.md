@@ -1,15 +1,13 @@
-# SWEETy – Blood Glucose Tracker
+# Sweety – Blood Glucose Tracker
 
-SWEETy is a full-stack web application that lets a person with diabetes record up to four blood
-glucose readings per day across four named time slots, and review daily, month-to-date, and
-previous-month reports with summary statistics.
+Sweety is a full-stack web app for recording up to four blood glucose readings a day across four
+named time slots, with daily, month-to-date and previous-month reports.
 
 This repository covers **Phase 0 through Phase 13.2**: monorepo foundation, authentication,
-readings CRUD, report generation, React frontend, testing and hardening, submission
-preparation, paginated readings history, advanced reports and data visualization, Docker
-reviewer readiness, reading-form test coverage, Redis-backed report caching, BullMQ
-background jobs, patient-consented doctor access, a dedicated doctor application panel, and
-Patient/Doctor selection on the authentication screens.
+readings CRUD, reports, React frontend, testing and hardening, submission preparation, paginated
+history, charts, Docker reviewer readiness, reading-form tests, Redis report caching, BullMQ
+background jobs, patient-consented doctor access, a dedicated doctor panel, and Patient/Doctor
+selection on the authentication screens.
 
 ---
 
@@ -22,7 +20,7 @@ Patient/Doctor selection on the authentication screens.
 - [Architecture](#architecture)
 - [Repository structure](#repository-structure)
 - [Prerequisites](#prerequisites)
-- [Run SWEETy Locally with Docker](#run-sweety-locally-with-docker)
+- [Run Sweety Locally with Docker](#run-sweety-locally-with-docker)
 - [Local installation](#local-installation)
 - [Database setup](#database-setup)
 - [Seed data](#seed-data)
@@ -41,26 +39,23 @@ Patient/Doctor selection on the authentication screens.
 
 ## Project overview
 
-SWEETy helps people managing diabetes track blood glucose levels without relying on a paper
-logbook or a generic spreadsheet. A user logs in, records readings at up to four named points in
-the day (morning fasting, after breakfast, after lunch, after dinner), and can review statistics
-for any single day, the current month up to today, or the full previous calendar month.
+Sweety replaces a paper logbook or generic spreadsheet. A patient logs in and records readings at
+up to four named points (morning fasting, after breakfast, after lunch, after dinner), then reviews
+statistics for a single day, the current month to date, or the full previous calendar month.
 
-Each patient owns their data. A patient may additionally grant a provisioned doctor read-only
-access to their readings and reports. Doctors never create or edit readings, and access starts
-only after the patient accepts an invitation and can be revoked at any time. Reminders and
-notifications remain out of scope.
+Each patient owns their data and may grant a provisioned doctor read-only access. Doctors never
+create or edit readings; access begins only when the patient accepts an invitation and can be
+revoked at any time. Reminders and notifications are out of scope.
 
-Main user workflows:
+Main workflows:
 
-1. **Register or log in** using email and password.
-2. **Record a reading** — pick the date, the slot, and enter the mg/dL value.
-3. **Review the dashboard** — see today's readings at a glance, plus MTD and previous-month
-   summaries.
-4. **Browse history** — paginate through all past readings, optionally filtered by date.
-5. **Open reports** — daily detail with a bar chart, or aggregate summaries for the month.
-6. **Edit or delete** any of your own readings.
-7. **Manage a care team** — accept a doctor's invitation token, reject it, or revoke access.
+1. **Register or log in** with email and password.
+2. **Record a reading** — date, slot, and mg/dL value.
+3. **Review the dashboard** — today's readings plus MTD and previous-month summaries.
+4. **Browse history** — paginated, optionally filtered by date.
+5. **Open reports** — daily detail with a bar chart, or aggregate monthly summaries.
+6. **Edit or delete** your own readings.
+7. **Manage a care team** — accept or reject a doctor's token, or revoke access.
 8. **Log out** — the session cookie is cleared server-side.
 
 Doctors sign in to a separate, read-only view of the patients who consented to them.
@@ -111,7 +106,7 @@ Doctors sign in to a separate, read-only view of the patients who consented to t
 
 ### Frontend
 
-- Landing page with product introduction
+- Landing page introducing both experiences, with a scroll-linked dual dashboard showcase
 - Registration and login screens with client-side form feedback
 - Authenticated dashboard: time-aware greeting, four daily slots, overview summary cards
 - Readings history page with optional single-day filter, paginated controls, and a page-size
@@ -161,16 +156,12 @@ Doctors sign in to a separate, read-only view of the patients who consented to t
   revoked patients return `404`
 - Separate role-aware navigation, routes, and home pages in the client
 
-### Testing
+### Quality
 
-- 433 passing tests across 30 test files (306 server, 127 client; see CI output for current
-  results)
-- Server integration tests using Supertest against a real PostgreSQL test database
-- Client unit tests with Vitest and React Testing Library
-- TypeScript strict mode — zero type errors
-- ESLint clean — zero lint warnings or errors
-- Prettier formatting enforced
-- Both client and server production builds verified
+- 436 passing tests across 30 test files (306 server, 130 client; see CI output for current
+  results) — Supertest against a real PostgreSQL test database, Vitest + React Testing Library on
+  the client
+- TypeScript strict mode, ESLint, Prettier, and both production builds all clean
 
 ---
 
@@ -203,17 +194,17 @@ process described in [docs/screenshots/README.md](docs/screenshots/README.md).
 
 ## Technology stack
 
-| Area         | Technology                                                       |
-| ------------ | ---------------------------------------------------------------- |
-| Frontend     | React 19, TypeScript 5.9, Vite 8, React Router 7, Tailwind CSS 4 |
-| Animations   | Motion (`motion/react`, formerly Framer Motion)                  |
-| Backend      | Node.js 22, Express 5, TypeScript 5.9, Zod 4                     |
-| Auth         | bcryptjs, jsonwebtoken, HTTP-only cookies                        |
-| Database     | PostgreSQL 17, Drizzle ORM 0.45, `pg`                            |
-| Testing      | Vitest 4, React Testing Library, Supertest, jsdom                |
-| Code quality | ESLint 10 (flat config), Prettier 3, strict TypeScript           |
-| Dev tooling  | npm workspaces, `concurrently`, `tsx`                            |
-| Containers   | Docker Compose with client, server, and PostgreSQL services      |
+| Area         | Technology                                                          |
+| ------------ | ------------------------------------------------------------------- |
+| Frontend     | React 19, TypeScript 5.9, Vite 8, React Router 7, Tailwind CSS 4    |
+| Animations   | Motion (`motion/react`), Lenis smooth scrolling on the landing page |
+| Backend      | Node.js 22, Express 5, TypeScript 5.9, Zod 4                        |
+| Auth         | bcryptjs, jsonwebtoken, HTTP-only cookies                           |
+| Database     | PostgreSQL 17, Drizzle ORM 0.45, `pg`                               |
+| Testing      | Vitest 4, React Testing Library, Supertest, jsdom                   |
+| Code quality | ESLint 10 (flat config), Prettier 3, strict TypeScript              |
+| Dev tooling  | npm workspaces, `concurrently`, `tsx`                               |
+| Containers   | Docker Compose with client, server, and PostgreSQL services         |
 
 **Package manager:** npm. The project was scoped with Bun but the Docker requirement specified
 Node.js and npm; npm workspaces are used consistently throughout.
@@ -222,7 +213,7 @@ Node.js and npm; npm workspaces are used consistently throughout.
 
 ## Architecture
 
-SWEETy is an **npm-workspace monorepo** with two independently runnable applications:
+Sweety is an **npm-workspace monorepo** with two independently runnable applications:
 
 - `apps/client` — Vite + React 19 single-page application. Communicates with the API over
   relative `/api/...` URLs (proxied by Vite in development, served through the same origin in
@@ -334,9 +325,9 @@ sweety/
 
 ---
 
-## Run SWEETy Locally with Docker
+## Run Sweety Locally with Docker
 
-This is the fastest way to try SWEETy: no Node.js or local PostgreSQL required — the Compose stack
+This is the fastest way to try Sweety: no Node.js or local PostgreSQL required — the Compose stack
 builds and runs everything in containers. All commands below have been verified against this
 repository.
 
@@ -409,25 +400,14 @@ successfully before you use the application. See [Database setup](#database-setu
 
 ### Step 5: Seed demo data (optional)
 
-Seeding is optional but recommended for reviewers who want to explore the dashboard and charts
-with sample data. It is explicitly opt-in — nothing is seeded automatically:
+Seeding is opt-in — nothing is seeded automatically. It is recommended for exploring the dashboard
+and charts with sample data, and safe to re-run (it never deletes or truncates existing data):
 
 ```bash
 docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx /app/apps/server/src/database/seed.ts"
 ```
 
-The script is idempotent and safe to re-run; it never deletes or truncates existing data. Demo
-credentials (confirmed against the seed script):
-
-| Role    | Email                 | Password      |
-| ------- | --------------------- | ------------- |
-| Patient | `demo@sweety.local`   | `Demo1234!`   |
-| Doctor  | `doctor@sweety.local` | `Doctor1234!` |
-
-The doctor account comes pre-assigned to ten patients (the demo patient plus nine roster patients)
-with a small invitation history, so the doctor panel is populated from the first sign-in.
-
-Details and safety restrictions: [Seed data](#seed-data).
+Demo credentials, the seeded roster and safety restrictions are in [Seed data](#seed-data).
 
 ### Step 6: Open the application
 
@@ -561,7 +541,7 @@ container (no host `DATABASE_URL` needed — Compose injects it):
 docker compose exec server npm run db:migrate
 ```
 
-See [Run SWEETy Locally with Docker](#run-sweety-locally-with-docker) for the complete workflow.
+See [Run Sweety Locally with Docker](#run-sweety-locally-with-docker) for the complete workflow.
 
 ### Local PostgreSQL setup (without Docker)
 
@@ -682,27 +662,21 @@ npm run dev:client   # Vite dev server
 
 ### Docker Compose
 
-The complete reviewer walkthrough — clone → `.env` → startup → migrations → optional demo seed →
-open the app — lives in [Run SWEETy Locally with Docker](#run-sweety-locally-with-docker).
+The full walkthrough — clone → `.env` → startup → migrations → optional demo seed → open the app —
+is in [Run Sweety Locally with Docker](#run-sweety-locally-with-docker). Quick reference:
 
 ```bash
-docker compose up --build
-```
-
-Starts four services: `postgres` (PostgreSQL 17), `redis` (report cache), `server` (Express API),
-and `client` (Vite). Services start in dependency order with health checks.
-
-- Frontend: `http://localhost:5173`
-- API health: `http://localhost:5000/api/health`
-- PostgreSQL from host tools: `localhost:5432` (or `POSTGRES_PORT` if overridden)
-- Redis is internal to the Compose network (no host port); reports still work when it is down
-
-```bash
+docker compose up --build       # five health-gated services
 docker compose up -d --build    # run in background
 docker compose logs -f          # follow logs
 docker compose down             # stop (data volume preserved)
 docker compose down -v          # stop and delete database volume (destructive)
 ```
+
+- Frontend: `http://localhost:5173`
+- API health: `http://localhost:5000/api/health`
+- PostgreSQL from host tools: `localhost:5432` (or `POSTGRES_PORT`)
+- Redis is internal to the Compose network (no host port); reports still work when it is down
 
 ### Port conflicts
 
@@ -817,7 +791,7 @@ Synchronous report endpoints continue to work unchanged.
   `npm run dev:worker` or the `worker` Docker Compose service. It runs independently of Express and
   can be restarted or scaled without dropping HTTP requests.
 - **Worker Concurrency:** Set to a conservative value of **2** (`REPORT_WORKER_CONCURRENCY`),
-  optimal for SWEETy's report queries while avoiding database connection exhaustion.
+  optimal for Sweety's report queries while avoiding database connection exhaustion.
 - **Graceful Shutdown:** On `SIGTERM` / `SIGINT`, the worker halts job polling, drains in-flight
   jobs, closes the BullMQ worker and queue, closes the Redis connection, and disconnects from
   PostgreSQL with a 10-second bounded safety timeout.
@@ -1194,7 +1168,7 @@ observations. Slots are counted client-side from the same readings the trend lin
 
 ## Patient and Doctor Roles
 
-SWEETy has two application roles:
+Sweety has two application roles:
 
 | Role      | Self-registerable | Can record/edit readings | Data access                                             |
 | --------- | ----------------- | ------------------------ | ------------------------------------------------------- |
@@ -1499,140 +1473,85 @@ report-tab crossfade. `prefers-reduced-motion` is honoured globally (CSS) and in
 
 ## Project phases
 
-### Phase 0 — Foundation
-
-npm workspaces, shared TypeScript configuration, React + Vite + Tailwind client skeleton, Express
-backend with Helmet/CORS/JSON parsing, Zod environment validation, PostgreSQL connection, Drizzle
-client, `/api/health` endpoint, graceful shutdown, Docker Compose with health checks, ESLint,
-Prettier, and initial test scaffolding.
-
-### Phase 1 — Authentication and user foundation
-
-`users` table with case-insensitive email uniqueness, Zod-validated register/login/me/logout
-endpoints, bcrypt hashing (cost 12), HS256 JWT in an HTTP-only cookie, `requireAuth` middleware,
-in-memory rate limiting, typed frontend auth API client, integration tests.
-
-### Phase 2 — Blood glucose readings
-
-`readings` table (date-only, slot enum, value check constraint, unique per user/date/slot, cascade
-delete), authenticated CRUD endpoints with ownership on every query, Zod validation with friendly
-messages, date-only storage in `YYYY-MM-DD` with `DD-MM-YYYY` API surface, typed frontend
-readings API client, comprehensive integration tests.
-
-### Phase 3 — Report generation and analytics
-
-Daily, month-to-date, and previous-month report endpoints; PostgreSQL aggregation; correct
-boundary math for January → December rollover and leap-year February; injectable date-range
-helpers with unit tests; typed frontend reports API client.
-
-### Phase 4 — Frontend implementation and visual design
-
-React 19 single-page application: landing page, auth screens, authenticated dashboard, readings
-history, reports page with bar charts; cream/olive design system; Motion animations;
-`prefers-reduced-motion` support; responsive layout; client unit tests.
-
-### Phase 5 — Testing and hardening
-
-148 passing tests across 9 test files; TypeScript strict mode clean; ESLint clean; Prettier
-enforced; both production builds verified; malformed JSON handling fixed; test isolation
-hardened with `fileParallelism: false` and `_test`-suffixed database enforcement.
-
-### Phase 6 — Submission preparation
-
-Database seed script with safety guards and idempotent demo data; `.env.example` audit and
-documentation of all variables including `SEED_DEMO_DATA`; full README update covering Phases
-0–6; screenshot capture instructions and demo walkthrough script.
-
-### Phase 7 — Readings pagination
-
-User-scoped `page` / `limit` pagination on `GET /api/readings` with Zod-validated query params,
-shared filter conditions for the data and count queries, deterministic ordering, structured
-`data` + `pagination` responses, and Previous/Next pagination controls with a page-size selector
-on the Readings page. Documented defaults, maximum limit, and beyond-last-page behaviour.
-
-### Phase 8 — Advanced reports and data visualization
-
-Full-width glucose trend line chart of individual readings (chronological, slot-ordered, with
-hover/keyboard tooltips) and a time-slot donut chart with counts and percentages, both driven by
-the selected Daily / Month-to-date / Previous-month period. The existing daily-average bar chart
-is preserved. Both new charts are hand-drawn SVG/CSS components — no charting dependency was
-added — with responsive stacking, labelled loading/empty/error states, and text equivalents for
-assistive technologies.
-
-### Phase 9 — Docker audit and reviewer readiness
-
-End-to-end audit and verification of the existing Docker Compose developer/reviewer experience
-(no infrastructure rewrite). Compose now fails fast when `JWT_SECRET` is missing instead of
-passing an empty value to the server. The complete local workflow — clone, `.env`,
-`docker compose up -d --build`, in-container migrations, explicitly opt-in demo seed, open the
-app — is documented in [Run SWEETy Locally with Docker](#run-sweety-locally-with-docker) and was
-verified end-to-end: image builds, service health gating, migrations (idempotent, verified on a
-fresh database via an isolated disposable stack with no auto-seeding), login/logout with
-HTTP-only cookies through the Vite proxy, full readings CRUD with domain-rule enforcement and
-ownership isolation, reports and pagination, and data persistence across container restarts and
-recreation of the `postgres` container on the named volume.
-
-### Phase 10 — Frontend testing with React Testing Library
-
-User-focused test coverage for the reading form and its workflows: rendering and accessible
-naming, validation and boundary values (40–600 mg/dL), slot selection, `Asia/Kolkata` date
-defaulting and `DD-MM-YYYY` conversion, create/edit workflows through the dialog and the
-Readings page, API failure handling (400/401/409/500/network) with value retention and form
-re-enabling, pending-state double-submission prevention, and field-error `aria` association.
-The client suite grew from 63 to 91 tests with no application-code changes.
-
-### Phase 11 — Redis report caching
-
-Cache-aside Redis caching for the three report endpoints, with PostgreSQL remaining the source
-of truth: versioned, user-scoped cache keys built from the authenticated identity, a
-configurable 60-second TTL, and user-version-counter invalidation after every successful reading
-mutation. Redis failures (read, write, invalidation, connection) degrade transparently to
-PostgreSQL; caching is disabled entirely when `REDIS_URL` is unset. Docker Compose gained an
-internal-only Redis 7 service with no persistence, and `/api/health` reports cache status and
-hit/miss/error counters informationally.
-
-### Phase 12 — BullMQ Background Jobs & Asynchronous Report Generation
-
-Introduced BullMQ background job processing with a dedicated worker process for asynchronous
-report generation. Features include deterministic user-scoped job deduplication, multi-stage
-progress reporting, exponential retry backoff, bounded Redis retention for sensitive health data,
-strict user ownership verification, and graceful worker shutdown. Docker Compose was expanded with
-the `worker` service, and the React frontend was enhanced with background report triggering and
-live polling.
-
-### Phase 13 — Patient and doctor roles
-
-Added `patient` and `doctor` roles with strict server-side RBAC. Public registration remains
-patient-only; doctors are provisioned through a guarded, audited CLI. Patients grant read-only
-access through hashed, expiring, single-use invitation tokens and can reject or revoke at any
-time. Doctor routes re-check the active assignment on every request, and the report cache and
-BullMQ jobs are scoped by requester and patient so revocation blocks both reads and results. The
-client gained role-aware navigation, a patient Care team page, and a read-only doctor patient view.
-
-### Phase 13.1 — Dedicated doctor panel
-
-Split the authenticated client into two shells over the same backend and authentication:
-`PatientLayout` preserves the existing patient header and navigation, while `DoctorLayout` adds a
-persistent sidebar, responsive disclosure navigation, and denser content. Doctor routes moved to
-`/doctor/dashboard`, `/doctor/patients`, `/doctor/patients/:patientId`, and
-`/doctor/invitations`, with old `/patients` bookmarks redirecting. The dashboard reports assigned
-patients and pending invitations from real assignment APIs, the directory filters only the
-doctor's assigned patients, the workspace keeps readings and reports read-only and can queue a
-background report, and the invitations page filters every assignment state while displaying a raw
-token exactly once. Route guards use the server-provided role, loading does not redirect-flicker,
-and a `401` from any API call resets the client session. No backend endpoints, schemas, or
-dependencies were added.
-
-### Phase 13.2 — Patient/Doctor selection on authentication screens
-
-Login and registration now open with two equal-weight Patient and Doctor cards above the form,
-using authored icons, `aria-pressed` state, keyboard operation, and the existing cream/olive tokens.
-Login compares the selected card with the role the server returns; on a mismatch the freshly issued
-session is revoked and an inline message names the account's real role, so the selected panel is
-never opened on the strength of the selection. Registration keeps the patient-only public flow and
-shows an inline provisioning notice when Doctor is chosen instead of submitting a form. The
-patient home gained a `/patient/dashboard` alias. No backend endpoint, schema, response shape, or
-dependency changed.
+- **Phase 0 — Foundation.** npm workspaces, shared TypeScript configuration, React + Vite + Tailwind
+  client skeleton, Express backend with Helmet/CORS/JSON parsing, Zod environment validation,
+  PostgreSQL connection, Drizzle client, `/api/health`, graceful shutdown, Docker Compose with
+  health checks, ESLint, Prettier, and initial test scaffolding.
+- **Phase 1 — Authentication.** `users` table with case-insensitive email uniqueness,
+  Zod-validated register/login/me/logout endpoints, bcrypt hashing (cost 12), HS256 JWT in an
+  HTTP-only cookie, `requireAuth` middleware, in-memory rate limiting, typed frontend auth client,
+  integration tests.
+- **Phase 2 — Readings.** `readings` table (date-only, slot enum, value check constraint, unique
+  per user/date/slot, cascade delete), authenticated CRUD with ownership on every query, Zod
+  validation with friendly messages, `YYYY-MM-DD` storage with a `DD-MM-YYYY` API surface, typed
+  client, comprehensive integration tests.
+- **Phase 3 — Reports.** Daily, month-to-date and previous-month endpoints; PostgreSQL aggregation;
+  January → December and leap-year boundary handling; injectable date-range helpers with unit
+  tests; typed frontend reports client.
+- **Phase 4 — Frontend.** React 19 SPA with landing, auth screens, dashboard, readings history and
+  reports with bar charts; cream/olive design system; Motion animations; `prefers-reduced-motion`;
+  responsive layout; client unit tests.
+- **Phase 5 — Testing and hardening.** 148 tests across 9 files; TypeScript strict mode, ESLint and
+  Prettier clean; both production builds verified; malformed-JSON handling fix; isolation via
+  `fileParallelism: false` and `_test`-suffixed database enforcement.
+- **Phase 6 — Submission preparation.** Seed script with safety guards and idempotent demo data;
+  `.env.example` audit covering every variable including `SEED_DEMO_DATA`; README for Phases 0–6;
+  screenshot instructions and demo walkthrough.
+- **Phase 7 — Readings pagination.** User-scoped `page` / `limit` on `GET /api/readings` with
+  Zod-validated query params, shared filter conditions, deterministic ordering, structured `data` +
+  `pagination` responses, and Previous/Next controls with a page-size selector; documented
+  defaults, maximum and beyond-last-page behaviour.
+- **Phase 8 — Advanced reports and charts.** Full-width individual-reading trend line (chronological,
+  slot-ordered, hover/keyboard tooltips) and a time-slot donut with counts and percentages, both
+  driven by the selected Daily / Month-to-date / Previous-month period; the daily-average bar chart
+  is preserved. Hand-drawn SVG/CSS, no charting dependency, responsive stacking, labelled
+  loading/empty/error states, and text equivalents for assistive technology.
+- **Phase 9 — Docker audit and reviewer readiness.** End-to-end audit of the existing Compose
+  workflow (no infrastructure rewrite); Compose now fails fast when `JWT_SECRET` is missing instead
+  of passing an empty value. The documented workflow — clone → `.env` → build → in-container,
+  idempotent migrations (verified on a fresh database via an isolated disposable stack with no
+  auto-seeding) → opt-in seed → open the app — was verified end-to-end: image builds, health
+  gating, login/logout with HTTP-only cookies through the Vite proxy, full CRUD with domain rules
+  and ownership isolation, reports, pagination, and persistence across restarts and `postgres`
+  recreation on the named volume.
+- **Phase 10 — Frontend testing.** React Testing Library coverage for the reading form: rendering
+  and accessible naming, validation and 40–600 boundaries, slot selection, `Asia/Kolkata` date
+  defaulting and `DD-MM-YYYY` conversion, create/edit flows, API failures (400/401/409/500/network)
+  with value retention and re-enabling, double-submission prevention, and field-error `aria`
+  association. Client suite grew from 63 to 91 tests with no application-code changes.
+- **Phase 11 — Redis report caching.** Cache-aside caching for the three report endpoints with
+  PostgreSQL as the source of truth: versioned, user-scoped keys from the authenticated identity, a
+  configurable 60-second TTL, and version-counter invalidation after every successful reading
+  mutation. Redis read/write/invalidation/connection failures degrade transparently; caching is
+  disabled without `REDIS_URL`. Compose gained an internal-only Redis 7 service, and `/api/health`
+  reports cache status and hit/miss/error counters.
+- **Phase 12 — BullMQ background jobs.** Dedicated worker process for asynchronous report
+  generation: deterministic user-scoped deduplication, multi-stage progress, exponential retry
+  backoff, bounded Redis retention for sensitive health data, strict ownership verification, and
+  graceful shutdown. Compose gained the `worker` service; the frontend triggers jobs and polls live
+  status.
+- **Phase 13 — Patient and doctor roles.** Strict server-side RBAC. Public registration stays
+  patient-only; doctors are provisioned through a guarded, audited CLI. Patients grant read-only
+  access via hashed, expiring, single-use tokens and can reject or revoke at any time. Doctor
+  routes re-check the active assignment per request, and cache/job scoping by requester and patient
+  blocks reads and results after revocation. The client gained role-aware navigation, a Care team
+  page, and a read-only doctor patient view.
+- **Phase 13.1 — Dedicated doctor panel.** Two shells over one backend: `PatientLayout` keeps the
+  existing patient header/navigation, `DoctorLayout` adds a persistent sidebar, responsive
+  disclosure navigation and denser content. Doctor routes moved to `/doctor/dashboard`,
+  `/doctor/patients`, `/doctor/patients/:patientId` and `/doctor/invitations`, with old `/patients`
+  bookmarks redirecting. The dashboard reports assigned-patient counts and pending invitations from
+  real assignment APIs, the directory filters only assigned patients, the workspace stays read-only
+  and can queue a background report, and the invitations page filters every state while showing a
+  raw token once. Guards use the server-provided role, loading does not flicker, and any `401`
+  resets the session. No backend endpoints, schemas or dependencies were added.
+- **Phase 13.2 — Patient/Doctor selection on auth screens.** Login and registration open with two
+  equal-weight Patient and Doctor cards above the form, using authored icons, `aria-pressed`,
+  keyboard operation and the existing tokens. Login compares the selection with the server-returned
+  role; on a mismatch it revokes the freshly issued session and shows an inline message naming the
+  account's real role. Registration keeps the patient-only flow and shows a provisioning notice
+  instead of a form when Doctor is chosen. The patient home gained a `/patient/dashboard` alias. No
+  backend endpoint, schema, response shape or dependency changed.
 
 ---
 
