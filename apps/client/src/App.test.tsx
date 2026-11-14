@@ -46,6 +46,7 @@ describe('App routing', () => {
       id: 'u1',
       name: 'Demo User',
       email: 'demo@example.com',
+      role: 'patient',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     });
@@ -68,6 +69,7 @@ describe('App routing', () => {
       id: 'u1',
       name: 'Demo User',
       email: 'demo@example.com',
+      role: 'patient',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     });
@@ -80,5 +82,46 @@ describe('App routing', () => {
 
     expect(await screen.findByRole('link', { name: 'Readings' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /Track your glucose/ })).not.toBeInTheDocument();
+  });
+
+  it('sends a doctor from a patient route to the doctor home', async () => {
+    vi.mocked(authApi.getCurrentUser).mockResolvedValue({
+      id: 'd1',
+      name: 'Demo Doctor',
+      email: 'doctor@example.com',
+      role: 'doctor',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/today']}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Invite a patient' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Patients' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Readings' })).not.toBeInTheDocument();
+  });
+
+  it('sends a patient from a doctor route back to the patient home', async () => {
+    vi.mocked(authApi.getCurrentUser).mockResolvedValue({
+      id: 'u1',
+      name: 'Demo User',
+      email: 'demo@example.com',
+      role: 'patient',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/patients']}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('link', { name: 'Care team' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Invite a patient' })).not.toBeInTheDocument();
   });
 });

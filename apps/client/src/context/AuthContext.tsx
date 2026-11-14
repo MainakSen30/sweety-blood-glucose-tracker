@@ -1,7 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { getCurrentUser, loginUser, logoutUser, registerUser } from '../services/authApi.js';
-import type { LoginInput, RegisterInput, SafeUser } from '../types/user.js';
+import {
+  roleHomePath,
+  type LoginInput,
+  type RegisterInput,
+  type SafeUser,
+  type UserRole,
+} from '../types/user.js';
 import { Spinner } from '../components/ui/Button.js';
 import { AuthContext, useAuth, type AuthContextValue, type AuthStatus } from './auth.js';
 
@@ -37,12 +43,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     status,
     login: async (input: LoginInput) => {
-      setUser(await loginUser(input));
+      const nextUser = await loginUser(input);
+      setUser(nextUser);
       setStatus('authenticated');
+      return nextUser;
     },
     register: async (input: RegisterInput) => {
-      setUser(await registerUser(input));
+      const nextUser = await registerUser(input);
+      setUser(nextUser);
       setStatus('authenticated');
+      return nextUser;
     },
     logout: async () => {
       await logoutUser();
@@ -72,17 +82,39 @@ export function RequireAuth() {
 
 /** Keeps signed-in users out of guest pages, landing included. */
 export function GuestRoute({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
 
   if (status === 'loading') {
     return <FullPageSpinner />;
   }
 
-  if (status === 'authenticated') {
-    return <Navigate to="/today" replace />;
+  if (status === 'authenticated' && user) {
+    return <Navigate to={roleHomePath(user.role)} replace />;
   }
 
   return children;
+}
+
+/**
+ * Role gate for a branch of authenticated routes. A user who signs in with
+ * the other role is sent to their own home rather than shown a dead end.
+ */
+export function RequireRole({ role }: { role: UserRole }) {
+  const { status, user } = useAuth();
+
+  if (status === 'loading') {
+    return <FullPageSpinner />;
+  }
+
+  if (status === 'unauthenticated' || !user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user.role !== role) {
+    return <Navigate to={roleHomePath(user.role)} replace />;
+  }
+
+  return <Outlet />;
 }
 
 function FullPageSpinner() {

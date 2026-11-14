@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/auth.js';
 import { ApiError } from '../services/http.js';
+import { roleHomePath } from '../types/user.js';
 import { Button } from '../components/ui/Button.js';
 import { Field, Input } from '../components/ui/Input.js';
 import { AuthLayout } from '../components/layout/AuthLayout.js';
@@ -40,8 +41,10 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      await login({ email: email.trim(), password });
-      navigate((location.state as { from?: string } | null)?.from ?? '/today', { replace: true });
+      const user = await login({ email: email.trim(), password });
+      navigate((location.state as { from?: string } | null)?.from ?? roleHomePath(user.role), {
+        replace: true,
+      });
     } catch (error) {
       setFormError(
         error instanceof ApiError ? error.message : 'Something went wrong. Please try again.',

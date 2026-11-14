@@ -349,7 +349,7 @@ export default function ReportsPage() {
   );
 }
 
-function DailyReportView({
+export function DailyReportView({
   report,
   dateValue,
   onDateChange,
@@ -433,7 +433,7 @@ function DailyReportView({
   );
 }
 
-function PeriodReportView({
+export function PeriodReportView({
   report,
   readings,
   showDatePicker,

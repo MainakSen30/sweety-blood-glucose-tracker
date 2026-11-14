@@ -2,20 +2,26 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useAuth } from '../../context/auth.js';
+import { roleHomePath } from '../../types/user.js';
 import { Button } from '../ui/Button.js';
 import { BrandMark, LogOutIcon } from '../ui/icons.js';
 
-const NAV_ITEMS = [
+const PATIENT_NAV = [
   { to: '/today', label: 'Today' },
   { to: '/readings', label: 'Readings' },
   { to: '/reports', label: 'Reports' },
+  { to: '/care-team', label: 'Care team' },
 ];
+
+const DOCTOR_NAV = [{ to: '/patients', label: 'Patients' }];
 
 /** Authenticated application shell: brand, primary navigation, account. */
 export function AppLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const reduceMotion = useReducedMotion();
+  const homePath = user ? roleHomePath(user.role) : '/';
+  const navItems = user?.role === 'doctor' ? DOCTOR_NAV : PATIENT_NAV;
 
   // Announce page changes to screen readers as the route swaps.
   useEffect(() => {
@@ -27,14 +33,14 @@ export function AppLayout() {
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-line bg-cream/95 backdrop-blur-sm">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-          <NavLink to="/today" className="flex items-center gap-2.5">
+          <NavLink to={homePath} className="flex items-center gap-2.5">
             <BrandMark className="size-7" />
             <span className="text-lg font-semibold tracking-tight text-olive-dark">Sweety</span>
           </NavLink>
 
           <nav aria-label="Main" className="order-3 -mx-1 w-full sm:order-none sm:mx-0 sm:w-auto">
             <ul className="flex gap-1">
-              {NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <li key={item.to}>
                   <NavLink
                     to={item.to}

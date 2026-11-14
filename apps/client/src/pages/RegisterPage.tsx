@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/auth.js';
 import { ApiError } from '../services/http.js';
+import { roleHomePath } from '../types/user.js';
 import { Button } from '../components/ui/Button.js';
 import { Field, Input } from '../components/ui/Input.js';
 import { AuthLayout } from '../components/layout/AuthLayout.js';
@@ -48,8 +49,8 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      await register({ name: name.trim(), email: email.trim(), password });
-      navigate('/today', { replace: true });
+      const user = await register({ name: name.trim(), email: email.trim(), password });
+      navigate(roleHomePath(user.role), { replace: true });
     } catch (error) {
       if (error instanceof ApiError && error.details && error.details.length > 0) {
         setFieldErrors(
