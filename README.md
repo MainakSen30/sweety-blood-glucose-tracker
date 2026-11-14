@@ -4,11 +4,12 @@ SWEETy is a full-stack web application that lets a person with diabetes record u
 glucose readings per day across four named time slots, and review daily, month-to-date, and
 previous-month reports with summary statistics.
 
-This repository covers **Phase 0 through Phase 13**: monorepo foundation, authentication,
+This repository covers **Phase 0 through Phase 13.2**: monorepo foundation, authentication,
 readings CRUD, report generation, React frontend, testing and hardening, submission
 preparation, paginated readings history, advanced reports and data visualization, Docker
 reviewer readiness, reading-form test coverage, Redis-backed report caching, BullMQ
-background jobs, and patient-consented doctor access.
+background jobs, patient-consented doctor access, a dedicated doctor application panel, and
+Patient/Doctor selection on the authentication screens.
 
 ---
 
@@ -72,6 +73,12 @@ Doctors sign in to a separate, read-only view of the patients who consented to t
 
 - User registration with name, email, and password
 - Login and logout
+- Patient/Doctor selection on both authentication screens; the selection only chooses which panel
+  is requested — the server-returned role always decides access
+- A role mismatch after sign-in discards the new session and explains which role the account belongs
+  to, rather than opening the wrong panel
+- Registration offers Patient or Doctor, but Doctor shows a provisioning notice instead of a form;
+  public registration cannot create doctor accounts
 - bcrypt password hashing (cost factor 12)
 - JWT authentication (HS256) stored in an HTTP-only cookie — no tokens in localStorage
 - Session resolved on page load via `GET /api/auth/me`
@@ -118,6 +125,31 @@ Doctors sign in to a separate, read-only view of the patients who consented to t
 - Motion animations (page entrance, dialog open/close, tab crossfade) with `prefers-reduced-motion`
   support
 
+### Patient panel
+
+- Separate authenticated shell with the existing cream and olive navigation
+- Routes: `/today`, `/readings`, `/reports`, `/care-team`
+- Retains reading create/edit/delete, reports, charts, filters, pagination, and care-team consent
+  controls
+- Never renders doctor-only navigation
+
+### Doctor panel
+
+- Separate authenticated shell: persistent desktop sidebar, disclosure navigation on small
+  screens, and information-dense content
+- Routes: `/doctor/dashboard`, `/doctor/patients`, `/doctor/patients/:patientId`,
+  `/doctor/invitations`
+- Dashboard shows assigned-patient count, pending invitations, recently accepted consent, and
+  empty/error states — no fabricated activity
+- Directory lists only actively assigned patients, with client-side name/email filtering (the API
+  exposes no doctor-side search or directory pagination)
+- Workspace shows the consented patient's readings, date filter, pagination, daily/period reports,
+  existing charts, and optional background report generation
+- Reading access is strictly read-only: no create, edit, delete, diagnosis, or treatment controls
+- Invitation history filters pending, accepted, expired, revoked, and declined invitations; creation
+  reuses the existing token flow and reveals the raw token once
+- No doctor navigation appears in the patient panel
+
 ### Patient and doctor roles
 
 - Two roles: `patient` (default, the only self-registerable role) and `doctor`
@@ -131,7 +163,8 @@ Doctors sign in to a separate, read-only view of the patients who consented to t
 
 ### Testing
 
-- 401 passing tests across 28 test files (see CI output for current results)
+- 433 passing tests across 30 test files (306 server, 127 client; see CI output for current
+  results)
 - Server integration tests using Supertest against a real PostgreSQL test database
 - Client unit tests with Vitest and React Testing Library
 - TypeScript strict mode — zero type errors
@@ -213,15 +246,19 @@ sweety/
 │   │   ├── src/
 │   │   │   ├── components/
 │   │   │   │   ├── charts/          # Trend, bar, and donut chart components
-│   │   │   │   ├── layout/          # AppLayout, AuthLayout
+│   │   │   │   ├── doctor/          # Doctor-panel status pill, stat card, read-only badge
+│   │   │   │   ├── layout/          # PatientLayout, DoctorLayout, AuthLayout
 │   │   │   │   ├── readings/        # ReadingFormDialog, ReadingsList, DeleteReadingDialog
 │   │   │   │   ├── reports/         # ReportSummaryStats
 │   │   │   │   └── ui/              # Button, Card, Dialog, Input, StatusNote, icons
 │   │   │   ├── context/             # AuthContext.tsx, auth.ts (useAuth hook)
-│   │   │   ├── lib/                 # date.ts, slots.ts, chart.ts, useStatusNote.ts
-│   │   │   ├── pages/               # LandingPage, LoginPage, RegisterPage,
-│   │   │   │                        # DashboardPage, ReadingsPage, ReportsPage
-│   │   │   ├── services/            # authApi.ts, readingsApi.ts, reportsApi.ts, http.ts
+│   │   │   ├── lib/                 # date.ts, slots.ts, chart.ts, doctor.ts, useStatusNote.ts
+│   │   │   ├── pages/               # LandingPage, LoginPage, RegisterPage, DashboardPage,
+│   │   │   │                        # ReadingsPage, ReportsPage, CareTeamPage,
+│   │   │   │                        # DoctorDashboardPage, DoctorPatientsPage,
+│   │   │   │                        # DoctorPatientPage, DoctorInvitationsPage
+│   │   │   ├── services/            # authApi.ts, readingsApi.ts, reportsApi.ts,
+│   │   │   │                        # accessApi.ts, doctorApi.ts, http.ts
 │   │   │   ├── types/               # user.ts, reading.ts, report.ts
 │   │   │   ├── App.tsx
 │   │   │   ├── index.css            # Tailwind v4 CSS-first config + design tokens
@@ -387,6 +424,9 @@ credentials (confirmed against the seed script):
 | Patient | `demo@sweety.local`   | `Demo1234!`   |
 | Doctor  | `doctor@sweety.local` | `Doctor1234!` |
 
+The doctor account comes pre-assigned to ten patients (the demo patient plus nine roster patients)
+with a small invitation history, so the doctor panel is populated from the first sign-in.
+
 Details and safety restrictions: [Seed data](#seed-data).
 
 ### Step 6: Open the application
@@ -541,8 +581,9 @@ Replace `change_me` with the password you set in `.env`.
 
 ## Seed data
 
-The seed script creates a demo account and approximately 30 days of synthetic glucose readings so
-the application can be evaluated without entering real personal data.
+The seed script creates demo accounts — a demo patient, a demo doctor with a ten-patient roster, and a
+small invitation history — plus approximately 30 days of synthetic glucose readings so the
+application can be evaluated without entering real personal data.
 
 ### Enable the seed
 
@@ -570,14 +611,24 @@ docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx
 | Patient | `demo@sweety.local`   | `Demo1234!`   |
 | Doctor  | `doctor@sweety.local` | `Doctor1234!` |
 
-The doctor account is pre-assigned to the demo patient with an active assignment so both role
-views can be evaluated immediately. Doctor access is read-only.
+The other roster patients and the invitation-history accounts all use `Demo1234!` too. Only
+`demo@sweety.local` is intended for signing in on the patient side; the rest exist so the doctor
+panel has a realistic list.
+
+The doctor account is assigned ten active patients (the demo patient included) and has two pending,
+one expired, and one revoked invitation, so both role views can be evaluated immediately. Doctor
+access is read-only.
 
 ### What the seed creates
 
-- One patient account and one doctor account with the demo credentials above.
-- An active doctor–patient assignment for the demo pair. A pre-existing assignment is never
-  reactivated, so a revoked demo relationship stays revoked.
+- One demo patient and one demo doctor with the demo credentials above.
+- Nine additional patients actively assigned to the demo doctor, each with their own 30 days of
+  readings. Together with the demo patient they make the ten active patients the doctor panel shows.
+- Four invitation-history patients: two pending (visible in the dashboard's pending count and the
+  invitations list), one expired, and one revoked, so every invitation filter has content.
+- An active doctor–patient assignment for the demo pair and each active roster patient. A
+  pre-existing assignment of any status is never reactivated or overwritten, so a revoked demo
+  relationship stays revoked.
 - Readings for T-1 through T-30 (relative to today in Asia/Kolkata), covering:
   - Fully completed days (all 4 slots)
   - Partially completed days (1–3 slots)
@@ -591,7 +642,9 @@ views can be evaluated immediately. Doctor access is read-only.
 
 The seed is safe to run multiple times:
 
-- If the demo account already exists, it is not modified and the password is never overwritten.
+- If a demo account already exists, it is not modified and the password is never overwritten.
+- Assignments are created only when no relationship exists for that doctor/patient pair, so statuses
+  are never changed on a re-run.
 - Reading inserts use `ON CONFLICT DO NOTHING`, so duplicate rows are silently skipped.
 
 ### Safety restrictions
@@ -1148,6 +1201,31 @@ SWEETy has two application roles:
 | `patient` | Yes (default)     | Yes, own data only       | Own readings and reports, plus their care team          |
 | `doctor`  | No                | No                       | Read-only for patients with an active, accepted consent |
 
+### Application panels
+
+Both roles sign in through the same `/login` page. The server-provided role in the session (never a
+client flag, URL parameter, or `localStorage` value) decides which shell and home page render. Login
+and registration both start with a Patient/Doctor selector; it defaults to Patient, carries across
+between the two screens, and is never trusted for authorization.
+
+| Role    | Home                | Navigation / routes                                      |
+| ------- | ------------------- | -------------------------------------------------------- |
+| Patient | `/today`            | `Today`, `Readings`, `Reports`, `Care team`              |
+| Doctor  | `/doctor/dashboard` | `Dashboard`, `Patients`, `Invitations` under `/doctor/*` |
+
+- A patient who opens a doctor route is redirected to `/today`.
+- A doctor who opens a patient route is redirected to `/doctor/dashboard`.
+- `/patient/dashboard` is accepted as an alias for the patient home and redirects to `/today`.
+- Unauthenticated visitors go to `/login`; the session check shows a full-page loading state so no
+  login form or wrong-role content flashes first.
+- An authenticated API response of `401` resets the client session, which sends the user back to
+  `/login` on the next render.
+- Old Phase 13 doctor bookmarks (`/patients`, `/patients/:patientId`) redirect to the new
+  `/doctor/patients` routes.
+
+The backend remains the authorization boundary: client route guards only choose the correct shell
+and never replace the server's per-request role and consent checks.
+
 ### Provisioning a doctor
 
 Public registration always creates a `patient`; any `role` in the request body is ignored. A
@@ -1165,7 +1243,9 @@ The CLI:
   in `_test` or `-test`, or when `DATABASE_URL` and `TEST_DATABASE_URL` are identical;
 - is idempotent — promoting an existing doctor reports that no change was made.
 
-There is deliberately no HTTP endpoint for role escalation.
+There is deliberately no HTTP endpoint for role escalation. The registration screen explains this
+when Doctor is selected instead of rendering a form, and the public register endpoint never reads a
+`role` field at all.
 
 ### Consent lifecycle
 
@@ -1289,7 +1369,16 @@ runs, so the test schema always matches the repository.
   records, invitation token lifecycle, patient accept/reject/revoke, doctor read access,
   revocation blocking reads and job results, cache separation between requester views, and
   role-aware client routing
-- Client routing and redirects, including role-aware home pages and route guards
+- Client routing and redirects, including role-aware home pages, route guards, legacy
+  `/patients` redirects, and no login-form flash while the session loads
+- Doctor panel: dashboard counts and consent dates, empty/error states, assigned-patient
+  directory filtering without extra requests, read-only workspace readings, invitation states and
+  filtering, one-time token display, and invitation creation
+- Expired-session signalling on `401` API responses
+- Patient/Doctor selector on Login and Sign Up: Patient default, switching, keyboard operation,
+  `aria-pressed` state, selection carried between the two screens, role-mismatch rejection with
+  session revocation, doctor registration blocked behind a provisioning notice, and unchanged
+  patient registration and validation paths
 - Client date conversion utilities
 - Client readings pagination (controls, page changes, loading/error states, page-size reset,
   mutation refresh, empty-page fallback)
@@ -1366,6 +1455,12 @@ Test counts: see CI output for current results.
   must share it with the patient through a trusted channel. No email service is integrated.
 - Doctor access is read-only. Doctors cannot create, edit, or delete readings, and there is no
   doctor-facing write path.
+- The doctor directory loads every actively assigned patient and filters name/email in the browser.
+  `GET /api/doctor/patients` has no search or pagination parameters, so no directory pagination is
+  offered and no client-side total is presented as server pagination.
+- The backend exposes no last-reading-date, reading-activity, or “recent activity” endpoint for
+  doctors. The doctor dashboard therefore shows assignment and invitation facts only; it does not
+  fabricate clinical activity. Reading history appears inside an assigned patient's workspace.
 - Role demotion is not exposed in the UI or API; it requires direct database access.
 
 ---
@@ -1388,6 +1483,11 @@ The client uses a warm, calm health-tech identity: **cream background, dark oliv
 | `terracotta` | `#C98568` | Destructive actions and small accents     |
 
 Tokens live in `@theme` in `apps/client/src/index.css` (Tailwind v4 CSS-first configuration).
+
+Both panels share the same neutral foundation. The patient shell keeps its existing cream header
+and olive navigation; the doctor shell adds density through a 240 px desktop sidebar, tighter rows,
+and compact stat cards, while `olive-dark` serves as the restrained forest-green accent. No new
+colour tokens, gradients, glass effects, emoji navigation, or dependencies were introduced.
 
 Typography: **Instrument Sans** (Google Fonts, 400–700). Numeric values use `tabular-nums`.
 
@@ -1508,6 +1608,31 @@ access through hashed, expiring, single-use invitation tokens and can reject or 
 time. Doctor routes re-check the active assignment on every request, and the report cache and
 BullMQ jobs are scoped by requester and patient so revocation blocks both reads and results. The
 client gained role-aware navigation, a patient Care team page, and a read-only doctor patient view.
+
+### Phase 13.1 — Dedicated doctor panel
+
+Split the authenticated client into two shells over the same backend and authentication:
+`PatientLayout` preserves the existing patient header and navigation, while `DoctorLayout` adds a
+persistent sidebar, responsive disclosure navigation, and denser content. Doctor routes moved to
+`/doctor/dashboard`, `/doctor/patients`, `/doctor/patients/:patientId`, and
+`/doctor/invitations`, with old `/patients` bookmarks redirecting. The dashboard reports assigned
+patients and pending invitations from real assignment APIs, the directory filters only the
+doctor's assigned patients, the workspace keeps readings and reports read-only and can queue a
+background report, and the invitations page filters every assignment state while displaying a raw
+token exactly once. Route guards use the server-provided role, loading does not redirect-flicker,
+and a `401` from any API call resets the client session. No backend endpoints, schemas, or
+dependencies were added.
+
+### Phase 13.2 — Patient/Doctor selection on authentication screens
+
+Login and registration now open with two equal-weight Patient and Doctor cards above the form,
+using authored icons, `aria-pressed` state, keyboard operation, and the existing cream/olive tokens.
+Login compares the selected card with the role the server returns; on a mismatch the freshly issued
+session is revoked and an inline message names the account's real role, so the selected panel is
+never opened on the strength of the selection. Registration keeps the patient-only public flow and
+shows an inline provisioning notice when Doctor is chosen instead of submitting a form. The
+patient home gained a `/patient/dashboard` alias. No backend endpoint, schema, response shape, or
+dependency changed.
 
 ---
 
