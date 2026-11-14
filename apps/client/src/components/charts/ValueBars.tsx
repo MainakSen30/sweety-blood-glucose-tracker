@@ -38,7 +38,7 @@ export function ValueBars({
       {/* pt-6 gives the avg label headroom when the average equals the max */}
       <div className="relative min-w-[280px] pt-6">
         <div className="relative flex h-32 items-end gap-1 sm:h-40">
-          {points.map((point, index) => (
+          {points.map((point) => (
             <div
               key={point.label}
               title={`${point.label}: ${point.value} mg/dL`}
@@ -47,7 +47,7 @@ export function ValueBars({
               <motion.div
                 initial={grow ? { scaleY: 0 } : false}
                 animate={grow ? { scaleY: 1 } : undefined}
-                transition={{ duration: 0.25, ease: EASE, delay: Math.min(index * 0.03, 0.3) }}
+                transition={{ duration: 0.18, ease: EASE }}
                 style={{ height: `${(point.value / maxValue) * 100}%`, transformOrigin: 'bottom' }}
                 className="w-full rounded-t-md bg-olive transition-colors duration-150 hover:bg-olive-dark"
               />
@@ -58,7 +58,7 @@ export function ValueBars({
             <motion.div
               initial={grow ? { opacity: 0 } : false}
               animate={grow ? { opacity: 1 } : undefined}
-              transition={{ duration: 0.25, ease: EASE }}
+              transition={{ duration: 0.18, ease: EASE }}
               className="pointer-events-none absolute inset-x-0"
               style={{ bottom: `${(average / maxValue) * 100}%` }}
             >

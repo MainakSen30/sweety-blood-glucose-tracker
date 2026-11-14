@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'motion/react';
 import { getDailyReport, getMonthToDateReport, getMonthlyReport } from '../services/reportsApi.js';
 import { listReadings } from '../services/readingsApi.js';
 import type { DailyReport, PeriodReport } from '../types/report.js';
@@ -15,7 +14,7 @@ import {
 import { SLOT_ORDER, slotLabel, slotShortLabel } from '../lib/slots.js';
 import { useAuth } from '../context/auth.js';
 import { Card } from '../components/ui/Card.js';
-import { Button, Spinner } from '../components/ui/Button.js';
+import { Button, LoadingState } from '../components/ui/Button.js';
 import { StatusNote } from '../components/ui/StatusNote.js';
 import { useStatusNote } from '../lib/useStatusNote.js';
 import { ArrowRightIcon, PlusIcon } from '../components/ui/icons.js';
@@ -89,11 +88,7 @@ export default function DashboardPage() {
   });
 
   if (loading && !data) {
-    return (
-      <div className="flex justify-center py-24">
-        <Spinner className="size-6 text-olive" />
-      </div>
-    );
+    return <LoadingState label="Loading dashboard" />;
   }
 
   if (error && !data) {
@@ -132,78 +127,72 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1], delay: 0.05 }}
-      >
-        <Card>
-          <h2 className="text-lg font-semibold tracking-tight text-ink">Today's readings</h2>
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-            {SLOT_ORDER.map((slot) => {
-              const reading = readingsBySlot.get(slot);
+      <Card>
+        <h2 className="text-lg font-semibold tracking-tight text-ink">Today's readings</h2>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          {SLOT_ORDER.map((slot) => {
+            const reading = readingsBySlot.get(slot);
 
-              return reading ? (
-                <button
-                  key={slot}
-                  type="button"
-                  onClick={() => openEdit(asReading(reading))}
-                  className="rounded-xl bg-sage/40 p-3 text-left transition-colors duration-150 hover:bg-sage/70"
-                >
-                  <span className="block text-xs font-medium text-ink-soft">
-                    {slotShortLabel(slot)}
-                  </span>
-                  <span className="mt-1 block text-xl font-semibold tabular-nums text-ink">
-                    {reading.value}
-                    <span className="ml-1 text-xs font-normal text-ink-soft">mg/dL</span>
-                  </span>
-                  <span className="mt-0.5 block text-[11px] text-ink-soft">{slotLabel(slot)}</span>
-                </button>
-              ) : (
-                <button
-                  key={slot}
-                  type="button"
-                  onClick={() => openAdd(today, slot)}
-                  className="rounded-xl border border-dashed border-line bg-cream/60 p-3 text-left transition-colors duration-150 hover:border-olive/50 hover:bg-sage/25"
-                >
-                  <span className="block text-xs font-medium text-ink-soft">
-                    {slotShortLabel(slot)}
-                  </span>
-                  <span className="mt-2 flex items-center gap-1 text-sm font-medium text-olive">
-                    <PlusIcon className="size-3.5" />
-                    Add
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 border-t border-line pt-4">
-            {summary.totalReadings > 0 ? (
-              <p className="text-sm text-ink-soft">
-                <span className="whitespace-nowrap">
-                  Today's average{' '}
-                  <strong className="font-semibold tabular-nums text-ink">
-                    {summary.average?.toFixed(1)} mg/dL
-                  </strong>
-                </span>{' '}
-                <span className="whitespace-nowrap">
-                  · lowest{' '}
-                  <strong className="font-semibold tabular-nums text-ink">{summary.lowest}</strong>
-                </span>{' '}
-                <span className="whitespace-nowrap">
-                  · highest{' '}
-                  <strong className="font-semibold tabular-nums text-ink">{summary.highest}</strong>
+            return reading ? (
+              <button
+                key={slot}
+                type="button"
+                onClick={() => openEdit(asReading(reading))}
+                className="rounded-xl bg-sage/40 p-3 text-left transition-colors duration-150 hover:bg-sage/70"
+              >
+                <span className="block text-xs font-medium text-ink-soft">
+                  {slotShortLabel(slot)}
                 </span>
-              </p>
+                <span className="mt-1 block text-xl font-semibold tabular-nums text-ink">
+                  {reading.value}
+                  <span className="ml-1 text-xs font-normal text-ink-soft">mg/dL</span>
+                </span>
+                <span className="mt-0.5 block text-[11px] text-ink-soft">{slotLabel(slot)}</span>
+              </button>
             ) : (
-              <p className="text-sm text-ink-soft">
-                No readings yet today. Recorded slots fill in as you add them.
-              </p>
-            )}
-          </div>
-        </Card>
-      </motion.div>
+              <button
+                key={slot}
+                type="button"
+                onClick={() => openAdd(today, slot)}
+                className="rounded-xl border border-dashed border-line bg-cream/60 p-3 text-left transition-colors duration-150 hover:border-olive/50 hover:bg-sage/25"
+              >
+                <span className="block text-xs font-medium text-ink-soft">
+                  {slotShortLabel(slot)}
+                </span>
+                <span className="mt-2 flex items-center gap-1 text-sm font-medium text-olive">
+                  <PlusIcon className="size-3.5" />
+                  Add
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 border-t border-line pt-4">
+          {summary.totalReadings > 0 ? (
+            <p className="text-sm text-ink-soft">
+              <span className="whitespace-nowrap">
+                Today's average{' '}
+                <strong className="font-semibold tabular-nums text-ink">
+                  {summary.average?.toFixed(1)} mg/dL
+                </strong>
+              </span>{' '}
+              <span className="whitespace-nowrap">
+                · lowest{' '}
+                <strong className="font-semibold tabular-nums text-ink">{summary.lowest}</strong>
+              </span>{' '}
+              <span className="whitespace-nowrap">
+                · highest{' '}
+                <strong className="font-semibold tabular-nums text-ink">{summary.highest}</strong>
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm text-ink-soft">
+              No readings yet today. Recorded slots fill in as you add them.
+            </p>
+          )}
+        </div>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
         <Card>

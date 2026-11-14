@@ -34,6 +34,7 @@ export function useReadingDialogs(refresh: () => void) {
   }, []);
 
   const closeForm = useCallback(() => setFormOpen(false), []);
+  const closeDelete = useCallback(() => setDeleteTarget(null), []);
 
   const confirmDelete = useCallback(
     async (reading: Reading) => {
@@ -53,6 +54,7 @@ export function useReadingDialogs(refresh: () => void) {
 
   const formDialog = formOpen ? (
     <ReadingFormDialog
+      key="reading-form"
       onClose={closeForm}
       onSaved={refresh}
       reading={editing}
@@ -63,8 +65,9 @@ export function useReadingDialogs(refresh: () => void) {
 
   const deleteDialog = deleteTarget ? (
     <DeleteReadingDialog
+      key="delete-reading"
       reading={deleteTarget}
-      onClose={() => setDeleteTarget(null)}
+      onClose={closeDelete}
       onConfirm={(reading) => void confirmDelete(reading)}
       deleting={deleting}
     />

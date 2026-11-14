@@ -76,7 +76,7 @@ export default function LandingPage() {
           <motion.div
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: [0.42, 0, 1, 1] }}
+            transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
           >
             <h1 className="text-4xl font-semibold tracking-tight text-ink sm:text-5xl sm:leading-[1.1]">
               Track your glucose, four readings a day
@@ -100,7 +100,7 @@ export default function LandingPage() {
           <motion.div
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: [0.42, 0, 1, 1], delay: 0.07 }}
+            transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1], delay: reduceMotion ? 0 : 0.07 }}
             className="rounded-2xl border border-line bg-surface p-5 shadow-[0_24px_48px_-24px_rgb(52_63_43/0.25)] sm:p-6"
           >
             <h2 className="text-lg font-semibold tracking-tight text-ink">Today's readings</h2>
@@ -192,7 +192,7 @@ export default function LandingPage() {
         <motion.div
           initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
           animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, ease: [0.42, 0, 1, 1], delay: 0.14 }}
+          transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1], delay: reduceMotion ? 0 : 0.14 }}
           className="mt-12 grid gap-8 border-t border-line pt-6 sm:grid-cols-3 sm:gap-10"
         >
           {FEATURES.map((feature) => (

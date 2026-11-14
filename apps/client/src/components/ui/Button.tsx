@@ -40,7 +40,7 @@ export function Button({
       {...rest}
       disabled={disabled ?? loading}
       aria-busy={loading || undefined}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-[background-color,border-color,color,transform] duration-150 motion-safe:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
     >
       {loading ? <Spinner className="size-4" /> : null}
       {children}
@@ -59,5 +59,21 @@ export function Spinner({ className = 'size-5' }: { className?: string }) {
         strokeLinecap="round"
       />
     </svg>
+  );
+}
+
+/** Shared pending state: the spinner is decorative, the label is announced. */
+export function LoadingState({
+  label = 'Loading…',
+  className = 'py-24',
+}: {
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div role="status" aria-label={label} className={`flex justify-center ${className}`}>
+      <Spinner className="size-6 text-olive" />
+      <span className="sr-only">{label}</span>
+    </div>
   );
 }

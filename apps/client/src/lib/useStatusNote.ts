@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 /**
  * Small helper so pages can hold one transient message each. The nonce makes
@@ -13,7 +13,8 @@ export function useStatusNote(): [string, (message: string) => void, () => void]
     setNonce((current) => current + 1);
   };
 
-  const clear = () => setMessage('');
+  // Stable identity so StatusNote's dismiss timer isn't reset by parent renders.
+  const clear = useCallback(() => setMessage(''), []);
 
   return [nonce > 0 ? message : '', show, clear];
 }

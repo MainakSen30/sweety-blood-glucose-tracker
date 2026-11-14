@@ -30,6 +30,33 @@ The problems are not "too much animation". They are **coordination, accessibilit
 
 ---
 
+## A2. Remediation status — 14 November 2026
+
+All six High findings are fixed, together with the cheap Low/Medium items that shared the same files. No animation library was added and the cream/olive identity is unchanged.
+
+| Finding | Status | Change |
+|---|---|---|
+| **H1** Dashboard double entrance | **Fixed** | Removed the nested `motion.div` from `DashboardPage`; AppLayout owns the single page entrance. |
+| **H2** Dashboard ignores reduced motion | **Fixed** | Dashboard no longer animates; `<MotionConfig reducedMotion="user">` now wraps the app in `main.tsx` as a backstop. |
+| **H3** Global CSS kill switch freezes feedback | **Fixed** | Replaced the `*` rule with a targeted spinner rule that slows it to 2 s; button press is `motion-safe:`. |
+| **H4** Landing uses `ease-in` | **Fixed** | All three entrances now use the house curve `[0.23, 1, 0.32, 1]`. |
+| **H5** Modal focus escapes / restore race | **Fixed** | `#root` is `inert` while open, Tab loops inside the panel, setup runs mount-only with `onClose` in a ref, and focus is restored only if the element is still connected. |
+| **H6** Stale report period | **Fixed** | Report data is keyed to the current tab/date request; a new request renders the labelled loading state instead of the previous period. |
+| **M2** Reports moves data vertically | **Fixed** | Report swap is now an opacity-only 150 ms fade. |
+| **M3** Bar stagger exceeds budget | **Fixed** | Bar growth is 180 ms with no stagger; the average line matches. |
+| **M4** Feedback lifecycle | **Partial** | `useStatusNote.clear` is stable, so the 4 s timer no longer resets on parent renders. Exit animation and always-mounted live region remain open. |
+| **M7** Inconsistent loading states | **Partial** | Dashboard, Readings, and Reports share `LoadingState` (`role="status"` + label). `aria-busy` regions and the Readings date-filter flash remain open. |
+| **L1** Hover motion not gated | **Partial** | The button press scale is now `motion-safe:`. Broader hover gating remains open. |
+| **L2** Dialog exit duration/curve | **Fixed** | 200 ms in, 150 ms out, same house curve in the reduced-motion branch. |
+| **L4** Unkeyed dialog children | **Fixed** | Explicit `reading-form` / `delete-reading` keys. |
+| **L5** Landing stair-step under reduced motion | **Fixed** | Both stagger delays are 0 when motion is reduced. |
+
+**Still open (follow-up batch):** M1 (shared `motion.ts` tokens), M4 (status/error exit animation and mounted live region), M5 (auth-page arrival), M6 (chart-group behaviour decision), M7 remainder (`aria-busy`, Readings date-filter in-place update), L1 remainder, L3, L6, L7.
+
+**Verification:** client tests 63/63, server untouched, `tsc --noEmit`, ESLint, and the production build all pass. Headless Chrome confirmed: the Dashboard card is a direct child of the page with no nested motion wrapper; the reduced-motion spinner runs at 2 s; the dialog sets `#root` inert, keeps every Tab inside the panel, closes on Escape, and clears inert; and a throttled Reports tab switch shows `Loading report` with no previous-period heading before the October data appears. No Vite error overlay.
+
+---
+
 ## B. Animation inventory
 
 ### Pages

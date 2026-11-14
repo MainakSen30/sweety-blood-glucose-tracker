@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { listReadings } from '../services/readingsApi.js';
 import type { PaginatedReadings } from '../types/reading.js';
 import { apiDateToInputValue, inputValueToApiDate, todayApiDate } from '../lib/date.js';
-import { Button, Spinner } from '../components/ui/Button.js';
+import { Button, LoadingState } from '../components/ui/Button.js';
 import { Card } from '../components/ui/Card.js';
 import { Field, Input } from '../components/ui/Input.js';
 import { StatusNote } from '../components/ui/StatusNote.js';
@@ -129,9 +129,7 @@ export default function ReadingsPage() {
               </Button>
             </div>
           ) : result === null ? (
-            <div className="flex justify-center py-16">
-              <Spinner className="size-6 text-olive" />
-            </div>
+            <LoadingState label="Loading readings" className="py-16" />
           ) : (
             <>
               {readings.length === 0 ? (

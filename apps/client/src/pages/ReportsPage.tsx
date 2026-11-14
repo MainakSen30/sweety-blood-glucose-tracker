@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { getDailyReport, getMonthlyReport, getMonthToDateReport } from '../services/reportsApi.js';
 import { listAllReadings } from '../services/readingsApi.js';
 import type { DailyReport, PeriodReport } from '../types/report.js';
@@ -13,7 +13,7 @@ import {
 } from '../lib/date.js';
 import { dailyAveragePoints, slotCounts } from '../lib/chart.js';
 import { slotShortLabel } from '../lib/slots.js';
-import { Button, Spinner } from '../components/ui/Button.js';
+import { Button, LoadingState } from '../components/ui/Button.js';
 import { Card } from '../components/ui/Card.js';
 import { Field, Input } from '../components/ui/Input.js';
 import { ReportSummaryStats } from '../components/reports/ReportSummaryStats.js';
@@ -43,13 +43,16 @@ export default function ReportsPage() {
   const [dailyDate, setDailyDate] = useState(apiDateToInputValue(todayApiDate()));
   const [mtdDate, setMtdDate] = useState(apiDateToInputValue(todayApiDate()));
   const [state, setState] = useState<ReportState>(EMPTY_STATE);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
-  const reduceMotion = useReducedMotion();
+  const requestKey = `${tab}|${dailyDate}|${mtdDate}|${reloadNonce}`;
+  // Until the response for the current tab/date arrives, there is nothing valid to show.
+  const loading = loadedKey !== requestKey;
 
   useEffect(() => {
     let cancelled = false;
+    const key = `${tab}|${dailyDate}|${mtdDate}|${reloadNonce}`;
 
     void (async () => {
       try {
@@ -74,14 +77,12 @@ export default function ReportsPage() {
         if (!cancelled) {
           setState(next);
           setError(false);
+          setLoadedKey(key);
         }
       } catch {
         if (!cancelled) {
           setError(true);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+          setLoadedKey(key);
         }
       }
     })();
@@ -91,10 +92,7 @@ export default function ReportsPage() {
     };
   }, [tab, dailyDate, mtdDate, reloadNonce]);
 
-  const retry = () => {
-    setLoading(true);
-    setReloadNonce((nonce) => nonce + 1);
-  };
+  const retry = () => setReloadNonce((nonce) => nonce + 1);
 
   return (
     <div className="space-y-6">
@@ -130,15 +128,13 @@ export default function ReportsPage() {
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={`${tab}-${dailyDate}-${mtdDate}`}
-          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-          animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-          exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-          transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15, ease: [0.23, 1, 0.32, 1] }}
         >
           {loading ? (
-            <div role="status" aria-label="Loading report" className="flex justify-center py-20">
-              <Spinner className="size-6 text-olive" />
-            </div>
+            <LoadingState label="Loading report" className="py-20" />
           ) : error ? (
             <Card>
               <p className="py-8 text-center text-sm text-ink-soft">
