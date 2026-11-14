@@ -1,5 +1,11 @@
 import { apiFetch } from './http.js';
-import type { DailyReport, PeriodReport } from '../types/report.js';
+import type {
+  DailyReport,
+  PeriodReport,
+  ReportJobStatus,
+  ReportJobSubmission,
+  ReportJobSubmitRequest,
+} from '../types/report.js';
 
 /**
  * Typed report API client.
@@ -17,4 +23,24 @@ export function getMonthToDateReport(date: string): Promise<PeriodReport> {
 
 export function getMonthlyReport(): Promise<PeriodReport> {
   return apiFetch<PeriodReport>('/api/reports/monthly');
+}
+
+/** Enqueues an asynchronous report generation job with BullMQ. */
+export function submitReportJob(request: ReportJobSubmitRequest): Promise<ReportJobSubmission> {
+  return apiFetch<ReportJobSubmission>('/api/reports/jobs', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/** Polls the status and progress of a report generation job. */
+export function getReportJobStatus(jobId: string): Promise<ReportJobStatus> {
+  return apiFetch<ReportJobStatus>(`/api/reports/jobs/${encodeURIComponent(jobId)}`);
+}
+
+/** Retrieves the final generated report once completed. */
+export function getReportJobResult<
+  T extends DailyReport | PeriodReport = DailyReport | PeriodReport,
+>(jobId: string): Promise<T> {
+  return apiFetch<T>(`/api/reports/jobs/${encodeURIComponent(jobId)}/result`);
 }

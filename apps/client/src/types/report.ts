@@ -42,3 +42,20 @@ export interface PeriodReport {
   period: ReportPeriod;
   summary: ReportSummary;
 }
+
+export interface ReportJobSubmission {
+  jobId: string;
+  status: string;
+}
+
+export interface ReportJobStatus {
+  jobId: string;
+  status: string;
+  progress: number | null;
+  failedReason?: string;
+}
+
+export interface ReportJobSubmitRequest {
+  reportType: ReportType;
+  date?: string;
+}

@@ -51,7 +51,7 @@ export async function monthly(request: Request, response: Response): Promise<Res
   return response.status(200).json(report);
 }
 
-function requireUserId(request: Request): string {
+export function requireUserId(request: Request): string {
   const userId = request.authenticatedUserId;
 
   if (!userId) {

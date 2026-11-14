@@ -4,10 +4,11 @@ SWEETy is a full-stack web application that lets a person with diabetes record u
 glucose readings per day across four named time slots, and review daily, month-to-date, and
 previous-month reports with summary statistics.
 
-This repository covers **Phase 0 through Phase 11**: monorepo foundation, authentication,
+This repository covers **Phase 0 through Phase 12**: monorepo foundation, authentication,
 readings CRUD, report generation, React frontend, testing and hardening, submission
 preparation, paginated readings history, advanced reports and data visualization, Docker
-reviewer readiness, reading-form test coverage, and Redis-backed report caching.
+reviewer readiness, reading-form test coverage, Redis-backed report caching, and BullMQ
+background jobs.
 
 ---
 
@@ -26,6 +27,8 @@ reviewer readiness, reading-form test coverage, and Redis-backed report caching.
 - [Seed data](#seed-data)
 - [Running the application](#running-the-application)
 - [API documentation](#api-documentation)
+- [Report caching (Redis)](#report-caching-redis)
+- [Background Jobs with BullMQ](#background-jobs-with-bullmq)
 - [Testing](#testing)
 - [Security considerations](#security-considerations)
 - [Assumptions and limitations](#assumptions-and-limitations)
@@ -319,22 +322,23 @@ is never copied into Docker images.
 docker compose up -d --build
 ```
 
-Builds two development images and starts four services in dependency order, gated by health
-checks: `postgres` (PostgreSQL 17) and `redis` (Redis 7, report cache) → `server` (Express API) →
-`client` (Vite dev server).
+Builds development images and starts five services in dependency order, gated by health
+checks: `postgres` (PostgreSQL 17) and `redis` (Redis 7, report cache & BullMQ queue) → `server`
+(Express API) & `worker` (BullMQ report processor) → `client` (Vite dev server).
 
 ```bash
-docker compose ps   # wait until all four services show "(healthy)"
+docker compose ps   # wait until services show "(healthy)" or "(running)"
 ```
 
 Exposed ports (host → container, configurable in `.env`):
 
-| Service    | Host port              | Container port | Notes                                 |
-| ---------- | ---------------------- | -------------- | ------------------------------------- |
-| `client`   | `CLIENT_PORT` (5173)   | 5173           |                                       |
-| `server`   | `SERVER_PORT` (5000)   | 5000           |                                       |
-| `postgres` | `POSTGRES_PORT` (5432) | 5432           |                                       |
-| `redis`    | — (internal only)      | 6379           | Report cache; not exposed to the host |
+| Service    | Host port              | Container port | Notes                                      |
+| ---------- | ---------------------- | -------------- | ------------------------------------------ |
+| `client`   | `CLIENT_PORT` (5173)   | 5173           | Web frontend                               |
+| `server`   | `SERVER_PORT` (5000)   | 5000           | Express REST API                           |
+| `postgres` | `POSTGRES_PORT` (5432) | 5432           | Relational database                        |
+| `redis`    | — (internal only)      | 6379           | Cache & BullMQ queue; internal to Docker   |
+| `worker`   | — (internal only)      | —              | Background job worker; no host port needed |
 
 Source code is bind-mounted into the containers, so both apps hot-reload as you edit.
 
@@ -376,12 +380,27 @@ Details and safety restrictions: [Seed data](#seed-data).
   <http://localhost:5000/api/health> (direct)
 - **Database from host tools:** `localhost:5432` (or your `POSTGRES_PORT`)
 
-### Step 7: Useful Docker commands
+### Step 7: Trigger asynchronous report generation
+
+1. Navigate to the **Reports** page (`http://localhost:5173/reports`).
+2. Select any report tab (Daily, Month to date, or Previous month).
+3. Click the **Generate in background** button in the top-right of the Reports header.
+4. Observe the immediate `202 Accepted` response: the UI shows the queued job identifier (`Job ID: rpt_<userId>_<type>_<date>`) and initial state (`Queued (waiting)`).
+5. Watch the background worker process the job and transition the state to `Processing` with progress updates.
+6. Once completed, the completed report is automatically fetched, the charts and statistics render, and the banner indicates `✓ Report ready & loaded`.
+7. Follow the live worker logs in another terminal to observe background job lifecycle events:
+   ```bash
+   docker compose logs -f worker
+   ```
+
+### Step 8: Useful Docker commands
 
 ```bash
 docker compose up -d --build   # start all services (detached, build images)
 docker compose ps              # container status and health
-docker compose logs -f         # follow logs (add: server / client / postgres)
+docker compose logs -f         # follow logs (add: server / worker / client / postgres / redis)
+docker compose logs -f worker  # follow only background job worker logs
+docker compose restart worker  # restart only the BullMQ worker
 docker compose restart         # restart all containers
 docker compose stop            # stop containers (keep data)
 docker compose down            # stop and remove containers + network (data volume PRESERVED)
@@ -700,6 +719,93 @@ docker compose restart redis                  # or simply restart Redis
 
 ---
 
+## Background Jobs with BullMQ
+
+Asynchronous report generation offloads heavy or batch calculations from Express HTTP request
+handling to a dedicated background worker process. The architectural principle: **The Express
+API must not perform long-running report calculations synchronously on background requests;
+PostgreSQL remains the authoritative source of truth, Redis coordinates job queues, and BullMQ
+manages job state, retries, and lifecycle.**
+
+Synchronous report endpoints continue to work unchanged.
+
+### Architecture and queue configuration
+
+- **Queue Name:** `report-generation`
+- **Redis Namespacing:** BullMQ keys live under `sweety:jobs:*`. This keeps queue state logically
+  separate from the report cache (`sweety:v1:*`), so cache version invalidation never touches queue
+  data.
+- **Dedicated Redis Connection:** BullMQ blocking connections require `maxRetriesPerRequest: null`,
+  which is incompatible with the fail-fast report-cache client. BullMQ initializes its own dedicated
+  Redis connections from `REDIS_URL`.
+- **Worker Process:** A separate Node.js entry point (`apps/server/src/worker.ts`), started via
+  `npm run dev:worker` or the `worker` Docker Compose service. It runs independently of Express and
+  can be restarted or scaled without dropping HTTP requests.
+- **Worker Concurrency:** Set to a conservative value of **2** (`REPORT_WORKER_CONCURRENCY`),
+  optimal for SWEETy's report queries while avoiding database connection exhaustion.
+- **Graceful Shutdown:** On `SIGTERM` / `SIGINT`, the worker halts job polling, drains in-flight
+  jobs, closes the BullMQ worker and queue, closes the Redis connection, and disconnects from
+  PostgreSQL with a 10-second bounded safety timeout.
+
+### API Endpoints
+
+1. **Submit job:** `POST /api/reports/jobs`
+   - **Authentication:** Required (session cookie).
+   - **Request Body:** `{ reportType: 'daily' | 'month-to-date' | 'monthly', date?: 'DD-MM-YYYY' }`.
+   - **Response:** `202 Accepted` with `{ jobId: string, status: string }`.
+   - **User Security:** The `userId` is always extracted from the authenticated server-side session;
+     any client-supplied `userId` field is ignored.
+2. **Poll status:** `GET /api/reports/jobs/:jobId`
+   - **Authentication:** Required.
+   - **Response:** `200 OK` with `{ jobId, status, progress, failedReason? }`.
+   - **Ownership Check:** Returns `404 Not Found` if the job does not exist or belongs to another user.
+3. **Retrieve result:** `GET /api/reports/jobs/:jobId/result`
+   - **Authentication:** Required.
+   - **Response:** `200 OK` with the generated report object once completed.
+   - **State Handling:** Returns `409 Conflict` if the job is still processing or has failed. Returns
+     `404 Not Found` if foreign-owned.
+
+### Idempotency and Deduplication
+
+Job identifiers are deterministically derived from the authenticated user and report parameters:
+`rpt_<userId>_<reportType>_<date|'monthly'>`.
+
+- While an identical job is in flight (`waiting`, `active`, or `delayed`), duplicate submissions
+  return the existing job immediately instead of enqueueing redundant work.
+- When a job is in a finished state (`completed` or `failed`), a subsequent submission removes the
+  prior retained record and queues a fresh job so the user always receives up-to-date report data.
+
+### Retries and Failure Handling
+
+- **Retry Policy:** Configurable via `REPORT_JOB_ATTEMPTS` (default **3**) and `REPORT_JOB_BACKOFF_MS`
+  (default **1000ms**, exponential backoff).
+- **Permanent Errors:** Structurally invalid payloads or unknown report types throw
+  `UnrecoverableError`, failing immediately without consuming retry attempts.
+- **Transient Errors:** Database hiccups or temporary connection drops trigger exponential backoff.
+- **Redis Outage:** If Redis is unreachable during job submission or status lookup, the API responds
+  with `503 Service Unavailable`, leaving existing PostgreSQL operations functioning normally.
+
+### Sensitive Data and Job Retention
+
+Blood glucose reports contain personal health information:
+
+- Report payloads and user readings are **never logged** by the worker or queue lifecycle listeners.
+  Only sanitized job IDs, queue names, attempt numbers, and execution durations are logged.
+- Finished job records in Redis are bounded by `REPORT_JOB_RETENTION_SECONDS` (default **3600s** /
+  1 hour) via BullMQ's `removeOnComplete` and `removeOnFail` age options.
+- PostgreSQL does not store disposable job results.
+
+### Worker Management Commands
+
+```bash
+docker compose logs -f worker     # Follow live worker logs
+docker compose restart worker     # Restart the worker process
+docker compose stop worker        # Stop the worker (API continues queuing jobs)
+docker compose up -d worker       # Resume worker processing
+```
+
+---
+
 ## Scripts
 
 ### Root scripts
@@ -709,6 +815,7 @@ docker compose restart redis                  # or simply restart Redis
 | `npm run dev`                | Start API and client concurrently                |
 | `npm run dev:client`         | Start only the Vite dev server                   |
 | `npm run dev:server`         | Start only the Express API in watch mode         |
+| `npm run dev:worker`         | Start only the BullMQ worker in watch mode       |
 | `npm run build`              | Build both workspaces                            |
 | `npm test`                   | Run all test suites once                         |
 | `npm run test:watch`         | Run test suites in watch mode                    |
@@ -1244,28 +1351,40 @@ PostgreSQL; caching is disabled entirely when `REDIS_URL` is unset. Docker Compo
 internal-only Redis 7 service with no persistence, and `/api/health` reports cache status and
 hit/miss/error counters informationally.
 
+### Phase 12 — BullMQ Background Jobs & Asynchronous Report Generation
+
+Introduced BullMQ background job processing with a dedicated worker process for asynchronous
+report generation. Features include deterministic user-scoped job deduplication, multi-stage
+progress reporting, exponential retry backoff, bounded Redis retention for sensitive health data,
+strict user ownership verification, and graceful worker shutdown. Docker Compose was expanded with
+the `worker` service, and the React frontend was enhanced with background report triggering and
+live polling.
+
 ---
 
 ## Environment variable reference
 
-| Variable                    | Required    | Purpose                                                       | Default                 |
-| --------------------------- | ----------- | ------------------------------------------------------------- | ----------------------- |
-| `NODE_ENV`                  | No          | Runtime mode (`development`/`test`/`production`)              | `development`           |
-| `PORT`                      | No          | Express server port (host-local)                              | `5000`                  |
-| `CLIENT_URL`                | No          | CORS allowed origin                                           | `http://localhost:5173` |
-| `DATABASE_URL`              | **Yes**     | PostgreSQL connection string                                  | —                       |
-| `TEST_DATABASE_URL`         | For tests   | Vitest test database (must end with `_test`)                  | —                       |
-| `JWT_SECRET`                | **Yes**     | JWT signing key (≥32 chars). Generate: `openssl rand -hex 32` | —                       |
-| `JWT_EXPIRES_IN`            | No          | JWT + cookie lifetime (e.g. `1h`, `7d`)                       | `1h`                    |
-| `AUTH_RATE_LIMIT_WINDOW_MS` | No          | Auth rate-limit window (ms)                                   | `900000`                |
-| `AUTH_RATE_LIMIT_MAX`       | No          | Max auth requests per window per IP                           | `20`                    |
-| `POSTGRES_DB`               | For Docker  | PostgreSQL database name (Compose)                            | `sweety`                |
-| `POSTGRES_USER`             | For Docker  | PostgreSQL user (Compose)                                     | `sweety`                |
-| `POSTGRES_PASSWORD`         | For Docker  | PostgreSQL password (Compose)                                 | —                       |
-| `POSTGRES_PORT`             | For Docker  | Host port mapped to container 5432                            | `5432`                  |
-| `SERVER_PORT`               | For Docker  | Host port mapped to container 5000                            | `5000`                  |
-| `CLIENT_PORT`               | For Docker  | Host port mapped to container 5173                            | `5173`                  |
-| `VITE_API_PROXY_TARGET`     | No          | Vite proxy target for `/api` requests                         | `http://localhost:5000` |
-| `SEED_DEMO_DATA`            | For seeding | Must be `true` to allow seed script to run                    | unset                   |
-| `REDIS_URL`                 | No          | Redis for report caching; unset disables caching              | unset                   |
-| `REDIS_CACHE_TTL_SECONDS`   | No          | Report cache entry expiration (positive whole seconds)        | `60`                    |
+| Variable                       | Required    | Purpose                                                       | Default                 |
+| ------------------------------ | ----------- | ------------------------------------------------------------- | ----------------------- |
+| `NODE_ENV`                     | No          | Runtime mode (`development`/`test`/`production`)              | `development`           |
+| `PORT`                         | No          | Express server port (host-local)                              | `5000`                  |
+| `CLIENT_URL`                   | No          | CORS allowed origin                                           | `http://localhost:5173` |
+| `DATABASE_URL`                 | **Yes**     | PostgreSQL connection string                                  | —                       |
+| `TEST_DATABASE_URL`            | For tests   | Vitest test database (must end with `_test`)                  | —                       |
+| `JWT_SECRET`                   | **Yes**     | JWT signing key (≥32 chars). Generate: `openssl rand -hex 32` | —                       |
+| `JWT_EXPIRES_IN`               | No          | JWT + cookie lifetime (e.g. `1h`, `7d`)                       | `1h`                    |
+| `AUTH_RATE_LIMIT_WINDOW_MS`    | No          | Auth rate-limit window (ms)                                   | `900000`                |
+| `AUTH_RATE_LIMIT_MAX`          | No          | Max auth requests per window per IP                           | `20`                    |
+| `POSTGRES_DB`                  | For Docker  | PostgreSQL database name (Compose)                            | `sweety`                |
+| `POSTGRES_USER`                | For Docker  | PostgreSQL user (Compose)                                     | `sweety`                |
+| `POSTGRES_PASSWORD`            | For Docker  | PostgreSQL password (Compose)                                 | —                       |
+| `POSTGRES_PORT`                | For Docker  | Host port mapped to container 5432                            | `5432`                  |
+| `SERVER_PORT`                  | For Docker  | Host port mapped to container 5000                            | `5000`                  |
+| `CLIENT_PORT`                  | For Docker  | Host port mapped to container 5173                            | `5173`                  |
+| `VITE_API_PROXY_TARGET`        | No          | Vite proxy target for `/api` requests                         | `http://localhost:5000` |
+| `SEED_DEMO_DATA`               | For seeding | Must be `true` to allow seed script to run                    | unset                   |
+| `REDIS_URL`                    | No          | Redis for report caching & queues; unset disables caching     | unset                   |
+| `REDIS_CACHE_TTL_SECONDS`      | No          | Report cache entry expiration (positive whole seconds)        | `60`                    |
+| `REPORT_JOB_ATTEMPTS`          | No          | BullMQ retry attempts for report jobs                         | `3`                     |
+| `REPORT_JOB_BACKOFF_MS`        | No          | Initial exponential backoff delay (ms)                        | `1000`                  |
+| `REPORT_JOB_RETENTION_SECONDS` | No          | Retention age for finished jobs in Redis (s)                  | `3600`                  |

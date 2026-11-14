@@ -3,6 +3,7 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { checkDatabaseConnection, closeDatabaseConnection } from './database/index.js';
 import { closeRedis } from './cache/redisClient.js';
+import { closeReportQueue } from './jobs/reportQueue.js';
 
 const shutdownTimeoutMs = 10_000;
 
@@ -44,6 +45,7 @@ async function startServer(): Promise<void> {
         try {
           await closeDatabaseConnection();
           await closeRedis();
+          await closeReportQueue();
         } catch (closeError) {
           console.error('Failed to close the PostgreSQL pool:', closeError);
         }

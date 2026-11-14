@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { getDailyReport, getMonthlyReport, getMonthToDateReport } from '../services/reportsApi.js';
+import {
+  getDailyReport,
+  getMonthlyReport,
+  getMonthToDateReport,
+  getReportJobResult,
+  getReportJobStatus,
+  submitReportJob,
+} from '../services/reportsApi.js';
 import { listAllReadings } from '../services/readingsApi.js';
-import type { DailyReport, PeriodReport } from '../types/report.js';
+import type { DailyReport, PeriodReport, ReportJobStatus } from '../types/report.js';
 import type { Reading } from '../types/reading.js';
 import {
   apiDateToInputValue,
@@ -13,7 +20,7 @@ import {
 } from '../lib/date.js';
 import { dailyAveragePoints, slotCounts } from '../lib/chart.js';
 import { slotShortLabel } from '../lib/slots.js';
-import { Button, LoadingState } from '../components/ui/Button.js';
+import { Button, LoadingState, Spinner } from '../components/ui/Button.js';
 import { Card } from '../components/ui/Card.js';
 import { Field, Input } from '../components/ui/Input.js';
 import { ReportSummaryStats } from '../components/reports/ReportSummaryStats.js';
@@ -46,6 +53,12 @@ export default function ReportsPage() {
   const [error, setError] = useState(false);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
+
+  // Asynchronous background report generation state.
+  const [job, setJob] = useState<ReportJobStatus | null>(null);
+  const [isSubmittingJob, setIsSubmittingJob] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
+
   const requestKey = `${tab}|${dailyDate}|${mtdDate}|${reloadNonce}`;
   // Until the response for the current tab/date arrives, there is nothing valid to show.
   const loading = loadedKey !== requestKey;
@@ -92,16 +105,185 @@ export default function ReportsPage() {
     };
   }, [tab, dailyDate, mtdDate, reloadNonce]);
 
+  // Polling loop for active background report jobs.
+  useEffect(() => {
+    if (!job) return;
+    if (job.status === 'completed' || job.status === 'failed') return;
+
+    let cancelled = false;
+    const pollIntervalMs = 1000;
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const statusData = await getReportJobStatus(job.jobId);
+        if (cancelled) return;
+
+        setJob((prev) => (prev ? { ...prev, ...statusData } : null));
+
+        if (statusData.status === 'completed') {
+          window.clearInterval(intervalId);
+          try {
+            const result = await getReportJobResult(job.jobId);
+            if (cancelled) return;
+            if (result.reportType === 'daily') {
+              setState({ ...EMPTY_STATE, daily: result as DailyReport });
+            } else {
+              const periodReport = result as PeriodReport;
+              const periodReadings = await listAllReadings({
+                from: periodReport.period.startDate,
+                to: periodReport.period.endDate,
+              });
+              setState({ daily: null, period: periodReport, periodReadings });
+            }
+            setLoadedKey(requestKey);
+            setError(false);
+          } catch (fetchErr) {
+            if (!cancelled) {
+              setJobError(
+                fetchErr instanceof Error ? fetchErr.message : 'Failed to retrieve report result.',
+              );
+            }
+          }
+        } else if (statusData.status === 'failed') {
+          window.clearInterval(intervalId);
+        }
+      } catch {
+        if (!cancelled) {
+          window.clearInterval(intervalId);
+          setJobError('Could not check job status. Please try again.');
+        }
+      }
+    }, pollIntervalMs);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+    // Re-subscribe only when the active job ID, status, or report period changes.
+    // Progress changes alone should not restart the polling interval.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.jobId, job?.status, requestKey]);
+
+  const handleGenerateAsync = async () => {
+    setIsSubmittingJob(true);
+    setJobError(null);
+    try {
+      const reportDate =
+        tab === 'daily'
+          ? inputValueToApiDate(dailyDate)
+          : tab === 'month-to-date'
+            ? inputValueToApiDate(mtdDate)
+            : undefined;
+
+      const submission = await submitReportJob({
+        reportType: tab,
+        ...(reportDate ? { date: reportDate } : {}),
+      });
+
+      setJob({
+        jobId: submission.jobId,
+        status: submission.status,
+        progress: null,
+      });
+    } catch (err) {
+      setJobError(err instanceof Error ? err.message : 'Failed to queue report generation.');
+    } finally {
+      setIsSubmittingJob(false);
+    }
+  };
+
   const retry = () => setReloadNonce((nonce) => nonce + 1);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Reports</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          Averages over your own recorded readings — never an average of daily averages.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Reports</h1>
+          <p className="mt-1 text-sm text-ink-soft">
+            Averages over your own recorded readings — never an average of daily averages.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleGenerateAsync}
+          disabled={
+            job !== null &&
+            (job.status === 'waiting' || job.status === 'active' || job.status === 'delayed')
+          }
+          loading={isSubmittingJob}
+        >
+          Generate in background
+        </Button>
       </div>
+
+      {job || jobError ? (
+        <Card className="border-olive/30 bg-sage/20 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-olive-dark">
+                  Background Job
+                </span>
+                {job?.status && (
+                  <span
+                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+                      job.status === 'completed'
+                        ? 'bg-olive-dark text-cream'
+                        : job.status === 'failed'
+                          ? 'bg-terracotta text-cream'
+                          : 'bg-olive/20 text-olive-dark'
+                    }`}
+                  >
+                    {job.status === 'waiting'
+                      ? 'Queued (waiting)'
+                      : job.status === 'active'
+                        ? 'Processing'
+                        : job.status}
+                  </span>
+                )}
+              </div>
+              {job?.jobId && <p className="font-mono text-xs text-ink-soft">Job ID: {job.jobId}</p>}
+              {job?.progress !== null && job?.progress !== undefined && (
+                <p className="text-xs text-ink-soft">Progress: {job.progress}%</p>
+              )}
+              {job?.status === 'failed' && (
+                <p className="text-xs text-terracotta">
+                  {job.failedReason ?? 'Report generation failed in worker.'}
+                </p>
+              )}
+              {jobError && <p className="text-xs text-terracotta">{jobError}</p>}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {job?.status === 'completed' ? (
+                <span className="text-xs font-medium text-olive-dark">
+                  ✓ Report ready &amp; loaded
+                </span>
+              ) : job?.status === 'waiting' || job?.status === 'active' ? (
+                <div className="flex items-center gap-2 text-xs text-ink-soft">
+                  <Spinner className="size-3.5 text-olive" />
+                  <span>Generating…</span>
+                </div>
+              ) : null}
+
+              {(job?.status === 'completed' || job?.status === 'failed' || jobError) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setJob(null);
+                    setJobError(null);
+                  }}
+                  aria-label="Dismiss background job notice"
+                >
+                  Dismiss
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <div
         role="tablist"

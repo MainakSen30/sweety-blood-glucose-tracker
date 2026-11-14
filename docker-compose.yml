@@ -74,6 +74,38 @@ services:
     networks:
       - sweety-network
 
+  worker:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+      target: development
+    # Dedicated BullMQ worker process — never started inside the HTTP server.
+    command: ['npm', 'run', 'dev:worker', '--workspace', '@sweety/server']
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sweety}:${POSTGRES_PASSWORD:-sweety_dev_password}@postgres:5432/${POSTGRES_DB:-sweety}
+      # The env schema is shared with the API and validates JWT_SECRET even
+      # though the worker itself never signs tokens.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is missing - copy .env.example to .env and set a value of at least 32 characters (see README)}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-60}
+      REPORT_JOB_ATTEMPTS: ${REPORT_JOB_ATTEMPTS:-3}
+      REPORT_JOB_BACKOFF_MS: ${REPORT_JOB_BACKOFF_MS:-1000}
+      REPORT_JOB_RETENTION_SECONDS: ${REPORT_JOB_RETENTION_SECONDS:-3600}
+    volumes:
+      - ./apps/server/src:/app/apps/server/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # The worker is optional for the API's liveness: reports still work from
+    # PostgreSQL while the worker restarts.
+    restart: unless-stopped
+    init: true
+    networks:
+      - sweety-network
+
   client:
     build:
       context: .

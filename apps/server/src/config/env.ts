@@ -46,6 +46,22 @@ const envSchema = z.object({
     .int('REDIS_CACHE_TTL_SECONDS must be a whole number of seconds')
     .min(1, 'REDIS_CACHE_TTL_SECONDS must be at least 1 second')
     .default(60),
+  // BullMQ report-generation job policy.
+  REPORT_JOB_ATTEMPTS: z.coerce
+    .number()
+    .int('REPORT_JOB_ATTEMPTS must be a whole number')
+    .min(1, 'REPORT_JOB_ATTEMPTS must be at least 1')
+    .default(3),
+  REPORT_JOB_BACKOFF_MS: z.coerce
+    .number()
+    .int('REPORT_JOB_BACKOFF_MS must be a whole number of milliseconds')
+    .min(1, 'REPORT_JOB_BACKOFF_MS must be at least 1')
+    .default(1000),
+  REPORT_JOB_RETENTION_SECONDS: z.coerce
+    .number()
+    .int('REPORT_JOB_RETENTION_SECONDS must be a whole number of seconds')
+    .min(1, 'REPORT_JOB_RETENTION_SECONDS must be at least 1 second')
+    .default(3600),
 });
 
 const parsedEnvironment = envSchema.safeParse(process.env);
