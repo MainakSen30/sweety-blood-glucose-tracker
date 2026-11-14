@@ -1,8 +1,10 @@
 /**
  * Database seed script — demonstration data only.
  *
- * Creates a demo account and ~30 days of synthetic glucose readings so the
- * application can be evaluated without entering real personal data.
+ * Creates demo accounts and ~30 days of synthetic glucose readings so the
+ * application can be evaluated without entering real personal data. The doctor
+ * account is assigned a roster of ten active patients plus a few invitation
+ * states, so every doctor panel view has data.
  *
  * SAFETY REQUIREMENTS (all must pass or the script exits):
  *   1. NODE_ENV must NOT be 'production'.
@@ -25,6 +27,7 @@
  *   docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx /app/apps/server/src/database/seed.ts"
  */
 
+import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
@@ -191,8 +194,35 @@ const DEMO_NAME = 'Demo User';
 const DEMO_DOCTOR_EMAIL = 'doctor@sweety.local';
 const DEMO_DOCTOR_PASSWORD = 'Doctor1234!';
 const DEMO_DOCTOR_NAME = 'Dr. Demo';
+const DEMO_EXTRA_PASSWORD = 'Demo1234!';
 /** Must match BCRYPT_COST_FACTOR in auth.repository.ts */
 const BCRYPT_COST_FACTOR = 12;
+
+/**
+ * Extra demo-only patients. `active` patients appear in the doctor panel (the
+ * demo patient plus the nine here make ten); the other statuses exist so the
+ * invitation history filters and counts are not empty. Exported for the seed
+ * data test.
+ */
+export const DEMO_PATIENTS: ReadonlyArray<{
+  name: string;
+  email: string;
+  status: 'active' | 'pending' | 'expired' | 'revoked';
+}> = [
+  { name: 'Asha Rao', email: 'asha.rao@sweety.local', status: 'active' },
+  { name: 'Michael Chen', email: 'michael.chen@sweety.local', status: 'active' },
+  { name: 'Fatima Noor', email: 'fatima.noor@sweety.local', status: 'active' },
+  { name: 'Daniel Okafor', email: 'daniel.okafor@sweety.local', status: 'active' },
+  { name: 'Elena Petrova', email: 'elena.petrova@sweety.local', status: 'active' },
+  { name: 'Rohan Mehta', email: 'rohan.mehta@sweety.local', status: 'active' },
+  { name: 'Sofia Alvarez', email: 'sofia.alvarez@sweety.local', status: 'active' },
+  { name: 'James Whitfield', email: 'james.whitfield@sweety.local', status: 'active' },
+  { name: 'Priya Nair', email: 'priya.nair@sweety.local', status: 'active' },
+  { name: 'Lucas Meyer', email: 'lucas.meyer@sweety.local', status: 'pending' },
+  { name: 'Aiko Tanaka', email: 'aiko.tanaka@sweety.local', status: 'pending' },
+  { name: 'Omar Haddad', email: 'omar.haddad@sweety.local', status: 'expired' },
+  { name: 'Grace Kim', email: 'grace.kim@sweety.local', status: 'revoked' },
+];
 
 // All four slots, in definition order
 const ALL_SLOTS = schema.READING_SLOTS;
@@ -285,6 +315,33 @@ const SLOT_JITTER: Record<schema.ReadingSlot, number> = {
   after_dinner: 30,
 };
 
+type NewReading = typeof schema.readings.$inferInsert;
+
+/**
+ * Builds the same 30-day pattern for one user. `variant` slightly shifts the
+ * values so the roster does not look like ten copies of the same chart.
+ */
+function buildReadingRows(userId: string, variant: number): NewReading[] {
+  const rows: NewReading[] = [];
+  const shift = (variant % 5) * 3 - 6;
+
+  for (let daysAgo = 1; daysAgo <= 30; daysAgo++) {
+    const readingDate = dateOffset(daysAgo);
+    const pattern = TEN_DAY_CYCLE[(daysAgo - 1) % TEN_DAY_CYCLE.length]!;
+
+    for (const slot of slotsForPattern(pattern)) {
+      rows.push({
+        userId,
+        readingDate,
+        slot,
+        value: glucose(SLOT_BASE[slot] + shift, SLOT_JITTER[slot]),
+      });
+    }
+  }
+
+  return rows;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -345,6 +402,37 @@ async function seed(): Promise<void> {
     return newUser.id;
   }
 
+  /**
+   * Creates the doctor–patient assignment unless any relationship already exists
+   * for the pair. A pre-existing relationship of any status is left untouched:
+   * re-running the seed must never restore consent the patient revoked.
+   */
+  async function ensureAssignment(
+    doctorId: string,
+    patientId: string,
+    values: Omit<schema.NewDoctorPatientAssignment, 'doctorId' | 'patientId' | 'status'> & {
+      status: schema.AssignmentStatus;
+    },
+  ): Promise<boolean> {
+    const existing = await db
+      .select({ id: schema.doctorPatientAssignments.id })
+      .from(schema.doctorPatientAssignments)
+      .where(
+        and(
+          eq(schema.doctorPatientAssignments.doctorId, doctorId),
+          eq(schema.doctorPatientAssignments.patientId, patientId),
+        ),
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      return false;
+    }
+
+    await db.insert(schema.doctorPatientAssignments).values({ doctorId, patientId, ...values });
+    return true;
+  }
+
   try {
     // ------------------------------------------------------------------
     // 1. Upsert the demo patient and demo doctor
@@ -358,60 +446,83 @@ async function seed(): Promise<void> {
       'doctor',
     );
 
-    // A pre-existing relationship of any status is left untouched: re-running
-    // the seed must never silently restore consent the patient revoked.
-    const existingAssignment = await db
-      .select({ id: schema.doctorPatientAssignments.id })
-      .from(schema.doctorPatientAssignments)
-      .where(
-        and(
-          eq(schema.doctorPatientAssignments.doctorId, demoDoctorId),
-          eq(schema.doctorPatientAssignments.patientId, demoUserId),
-        ),
-      )
-      .limit(1);
+    const now = new Date();
+    const DAY_MS = 24 * 60 * 60 * 1000;
 
-    if (existingAssignment.length === 0) {
-      const now = new Date();
-      await db.insert(schema.doctorPatientAssignments).values({
-        doctorId: demoDoctorId,
-        patientId: demoUserId,
+    if (
+      !(await ensureAssignment(demoDoctorId, demoUserId, {
         status: 'active',
         acceptedAt: now,
-        expiresAt: new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000),
-      });
-      console.log('[seed] Created an active demo doctor–patient assignment.');
-    } else {
+        expiresAt: new Date(now.getTime() + 365 * DAY_MS),
+      }))
+    ) {
       console.log('[seed] Existing demo doctor–patient relationship left untouched.');
+    } else {
+      console.log('[seed] Created an active demo doctor–patient assignment.');
     }
 
     // ------------------------------------------------------------------
-    // 2. Build the readings payload for T-1 … T-30
+    // 2. Roster patients: active assignments plus invitation history
     // ------------------------------------------------------------------
-    console.log('\n[seed] Building synthetic readings (T-1 … T-30, Asia/Kolkata)…');
+    console.log('\n[seed] Ensuring demo patient roster…');
 
-    type NewReading = typeof schema.readings.$inferInsert;
-    const rows: NewReading[] = [];
+    const activePatientIds: string[] = [];
 
-    for (let daysAgo = 1; daysAgo <= 30; daysAgo++) {
-      const readingDate = dateOffset(daysAgo);
-      const pattern = TEN_DAY_CYCLE[(daysAgo - 1) % TEN_DAY_CYCLE.length]!;
-      const slots = slotsForPattern(pattern);
+    for (const [index, patient] of DEMO_PATIENTS.entries()) {
+      const patientId = await ensureDemoAccount(
+        patient.email,
+        patient.name,
+        DEMO_EXTRA_PASSWORD,
+        'patient',
+      );
 
-      for (const slot of slots) {
-        rows.push({
-          userId: demoUserId,
-          readingDate,
-          slot,
-          value: glucose(SLOT_BASE[slot], SLOT_JITTER[slot]),
+      if (patient.status === 'active') {
+        activePatientIds.push(patientId);
+        await ensureAssignment(demoDoctorId, patientId, {
+          status: 'active',
+          acceptedAt: new Date(now.getTime() - (index + 1) * DAY_MS),
+          expiresAt: new Date(now.getTime() + 365 * DAY_MS),
+        });
+      } else if (patient.status === 'pending') {
+        await ensureAssignment(demoDoctorId, patientId, {
+          status: 'pending',
+          tokenHash: createHash('sha256').update(`seed-invite-${patient.email}`).digest('hex'),
+          invitedAt: new Date(now.getTime() - (index + 1) * DAY_MS),
+          expiresAt: new Date(now.getTime() + 7 * DAY_MS),
+        });
+      } else if (patient.status === 'expired') {
+        await ensureAssignment(demoDoctorId, patientId, {
+          status: 'expired',
+          invitedAt: new Date(now.getTime() - 40 * DAY_MS),
+          expiresAt: new Date(now.getTime() - 33 * DAY_MS),
+        });
+      } else {
+        await ensureAssignment(demoDoctorId, patientId, {
+          status: 'revoked',
+          invitedAt: new Date(now.getTime() - 26 * DAY_MS),
+          expiresAt: new Date(now.getTime() + 339 * DAY_MS),
+          acceptedAt: new Date(now.getTime() - 25 * DAY_MS),
+          revokedAt: new Date(now.getTime() - 5 * DAY_MS),
         });
       }
     }
 
-    console.log(`[seed] Prepared ${rows.length} reading rows across 30 days.`);
+    // ------------------------------------------------------------------
+    // 3. Build the readings payload for every active patient, T-1 … T-30
+    // ------------------------------------------------------------------
+    console.log('\n[seed] Building synthetic readings (T-1 … T-30, Asia/Kolkata)…');
+
+    const readingPatients = [demoUserId, ...activePatientIds];
+    const rows: NewReading[] = readingPatients.flatMap((userId, index) =>
+      buildReadingRows(userId, index),
+    );
+
+    console.log(
+      `[seed] Prepared ${rows.length} reading rows across 30 days for ${readingPatients.length} patients.`,
+    );
 
     // ------------------------------------------------------------------
-    // 3. Insert readings in a transaction, ON CONFLICT DO NOTHING
+    // 4. Insert readings in a transaction, ON CONFLICT DO NOTHING
     // ------------------------------------------------------------------
     if (rows.length > 0) {
       await db.transaction(async (tx) => {
@@ -430,7 +541,7 @@ async function seed(): Promise<void> {
     }
 
     // ------------------------------------------------------------------
-    // 4. Summary
+    // 5. Summary
     // ------------------------------------------------------------------
     const countResult = await db
       .select({ count: sql<number>`count(*)::int` })
@@ -439,11 +550,28 @@ async function seed(): Promise<void> {
 
     const totalReadings = countResult[0]?.count ?? 0;
 
+    const assignmentCounts = await db
+      .select({
+        status: schema.doctorPatientAssignments.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(schema.doctorPatientAssignments)
+      .where(eq(schema.doctorPatientAssignments.doctorId, demoDoctorId))
+      .groupBy(schema.doctorPatientAssignments.status);
+
+    const countFor = (status: schema.AssignmentStatus): number =>
+      assignmentCounts.find((row) => row.status === status)?.count ?? 0;
+
     console.log('\n[seed] ✔  Seed complete.');
     console.log(`[seed]    Demo patient email    : ${DEMO_EMAIL}`);
     console.log(`[seed]    Demo patient password : ${DEMO_PASSWORD}`);
     console.log(`[seed]    Demo doctor email     : ${DEMO_DOCTOR_EMAIL}`);
     console.log(`[seed]    Demo doctor password  : ${DEMO_DOCTOR_PASSWORD}`);
+    console.log(`[seed]    Roster patient password: ${DEMO_EXTRA_PASSWORD}`);
+    console.log(`[seed]    Active patients       : ${countFor('active')}`);
+    console.log(
+      `[seed]    Invitations           : ${countFor('pending')} pending, ${countFor('expired')} expired, ${countFor('revoked')} revoked`,
+    );
     console.log(`[seed]    Total readings in DB for demo user: ${totalReadings}`);
     console.log('[seed]    NOTE: These are synthetic demonstration values — not medical data.\n');
   } finally {

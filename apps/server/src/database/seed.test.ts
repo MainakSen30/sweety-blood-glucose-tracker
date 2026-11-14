@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateSeedGuards, extractDatabaseName } from './seed.js';
+import { validateSeedGuards, extractDatabaseName, DEMO_PATIENTS } from './seed.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -173,5 +173,28 @@ describe('extractDatabaseName', () => {
 
   it('returns null for a non-URL string', () => {
     expect(extractDatabaseName('not-a-url')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Demo roster contents
+// ---------------------------------------------------------------------------
+
+describe('DEMO_PATIENTS', () => {
+  it('adds nine active patients to the demo patient for a ten-patient roster', () => {
+    expect(DEMO_PATIENTS.filter((patient) => patient.status === 'active')).toHaveLength(9);
+  });
+
+  it('includes invitation history states so the filters are not empty', () => {
+    expect(DEMO_PATIENTS.filter((patient) => patient.status === 'pending')).toHaveLength(2);
+    expect(DEMO_PATIENTS.filter((patient) => patient.status === 'expired')).toHaveLength(1);
+    expect(DEMO_PATIENTS.filter((patient) => patient.status === 'revoked')).toHaveLength(1);
+  });
+
+  it('uses unique demo-only email addresses', () => {
+    const emails = DEMO_PATIENTS.map((patient) => patient.email);
+
+    expect(new Set(emails).size).toBe(emails.length);
+    expect(emails.every((email) => email.endsWith('@sweety.local'))).toBe(true);
   });
 });
