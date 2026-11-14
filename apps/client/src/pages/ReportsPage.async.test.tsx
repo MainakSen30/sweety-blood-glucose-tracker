@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ReportsPage from './ReportsPage.js';
@@ -175,5 +175,39 @@ describe('ReportsPage — Asynchronous Background Jobs', () => {
     await user.click(dismissButton);
 
     expect(screen.queryByText('Job ID: rpt:test-job-dismiss')).not.toBeInTheDocument();
+  });
+
+  it('submits a monthly background report job with the selected historical date', async () => {
+    const user = userEvent.setup();
+    const MONTHLY_ASYNC_REPORT = {
+      reportType: 'monthly' as const,
+      period: { startDate: '01-09-2026', endDate: '30-09-2026' },
+      summary: { highest: 160, lowest: 80, average: 120, totalReadings: 2 },
+    };
+    vi.mocked(reportsApi.getMonthlyReport).mockResolvedValueOnce(MONTHLY_ASYNC_REPORT);
+    vi.mocked(reportsApi.submitReportJob).mockResolvedValueOnce({
+      jobId: 'rpt:monthly-job-1',
+      status: 'waiting',
+    });
+
+    render(<ReportsPage />);
+    await screen.findByRole('heading', { name: '12 November 2026', level: 2 });
+
+    await user.click(screen.getByRole('tab', { name: 'Previous month' }));
+    await screen.findByRole('heading', { name: '1–30 September 2026', level: 2 });
+
+    // Change date in date picker on the monthly report tab to 2026-10-15
+    fireEvent.change(screen.getByLabelText('Report date'), {
+      target: { value: '2026-10-15' },
+    });
+
+    const generateButton = screen.getByRole('button', { name: 'Generate in background' });
+    await user.click(generateButton);
+
+    expect(reportsApi.submitReportJob).toHaveBeenCalledWith({
+      reportType: 'monthly',
+      date: '15-10-2026',
+    });
+    expect(await screen.findByText('Job ID: rpt:monthly-job-1')).toBeInTheDocument();
   });
 });

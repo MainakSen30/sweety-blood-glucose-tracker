@@ -37,11 +37,26 @@ vi.mock('../../middleware/auth.js', () => ({
       return next();
     }
 
+    if (token === 'doctor-token') {
+      req.authenticatedUserId = 'doctor-1-id';
+      return next();
+    }
+
     return res.status(401).json({ status: 'error', message: 'Invalid or expired token' });
   },
   // The route modules compose `requireRole`; this suite isolates the patient
   // endpoints and only needs the role gate to pass through.
   requireRole: () => (_req: Request, _res: Response, next: NextFunction) => next(),
+}));
+
+vi.mock('../access/access.middleware.js', () => ({
+  requireActivePatientAssignment: (req: Request, _res: Response, next: NextFunction) => {
+    const patientId = req.params.patientId;
+    req.authorizedPatientId = typeof patientId === 'string' ? patientId : undefined;
+    return next();
+  },
+  requireAuthorizedPatientId: (req: Request) =>
+    req.authorizedPatientId ?? (typeof req.params.patientId === 'string' ? req.params.patientId : ''),
 }));
 
 beforeEach(() => {
@@ -90,11 +105,33 @@ describe('POST /api/reports/jobs — submission', () => {
     expect(mockQueue.submitReportJob).not.toHaveBeenCalled();
   });
 
-  it('rejects monthly report with an extraneous date with 400', async () => {
+  it('submits a monthly report job with a historical date and returns 202', async () => {
+    mockQueue.submitReportJob.mockResolvedValueOnce({
+      jobId: 'rpt_user-a-id_monthly_2026-09-15',
+      status: 'waiting',
+    });
+
     const response = await request(app)
       .post('/api/reports/jobs')
       .set('Cookie', 'sweety_access_token=user-a-token')
-      .send({ reportType: 'monthly', date: '15-01-2026' });
+      .send({ reportType: 'monthly', date: '15-09-2026' });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({
+      jobId: 'rpt_user-a-id_monthly_2026-09-15',
+      status: 'waiting',
+    });
+    expect(mockQueue.submitReportJob).toHaveBeenCalledWith('user-a-id', {
+      reportType: 'monthly',
+      date: '2026-09-15',
+    });
+  });
+
+  it('rejects monthly report with an impossible date with 400', async () => {
+    const response = await request(app)
+      .post('/api/reports/jobs')
+      .set('Cookie', 'sweety_access_token=user-a-token')
+      .send({ reportType: 'monthly', date: '31-02-2026' });
 
     expect(response.status).toBe(400);
     expect(mockQueue.submitReportJob).not.toHaveBeenCalled();
@@ -323,5 +360,33 @@ describe('GET /api/reports/jobs/:jobId/result — result retrieval', () => {
       .set('Cookie', 'sweety_access_token=user-a-token');
 
     expect(response.status).toBe(503);
+  });
+});
+
+describe('POST /api/doctor/patients/:patientId/reports/jobs — doctor job submission', () => {
+  it('submits a monthly report job for a patient with a historical date and returns 202', async () => {
+    mockQueue.submitReportJob.mockResolvedValueOnce({
+      jobId: 'rpt_doctor-1-id_418f430d-27f9-4e78-9e12-42111d4ebca5_monthly_2026-09-15',
+      status: 'waiting',
+    });
+
+    const response = await request(app)
+      .post('/api/doctor/patients/418f430d-27f9-4e78-9e12-42111d4ebca5/reports/jobs')
+      .set('Cookie', 'sweety_access_token=doctor-token')
+      .send({ reportType: 'monthly', date: '15-09-2026' });
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({
+      jobId: 'rpt_doctor-1-id_418f430d-27f9-4e78-9e12-42111d4ebca5_monthly_2026-09-15',
+      status: 'waiting',
+    });
+    expect(mockQueue.submitReportJob).toHaveBeenCalledWith(
+      '418f430d-27f9-4e78-9e12-42111d4ebca5',
+      {
+        reportType: 'monthly',
+        date: '2026-09-15',
+      },
+      'doctor-1-id',
+    );
   });
 });

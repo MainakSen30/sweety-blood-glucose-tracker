@@ -178,6 +178,15 @@ describe('queue configuration', () => {
     expect(buildReportJobId({ userId: 'user-1', reportType: 'monthly' })).toBe(
       'rpt_user-1_monthly_monthly',
     );
+    expect(
+      buildReportJobId({ userId: 'user-1', reportType: 'monthly', date: '2026-09-15' }),
+    ).toBe('rpt_user-1_monthly_2026-09-15');
+    // Distinct reference dates produce distinct job ids
+    expect(
+      buildReportJobId({ userId: 'user-1', reportType: 'monthly', date: '2026-09-15' }),
+    ).not.toBe(
+      buildReportJobId({ userId: 'user-1', reportType: 'monthly', date: '2026-10-15' }),
+    );
     // Different users never share a job id.
     expect(
       buildReportJobId({ userId: 'user-2', reportType: 'daily', date: '2026-01-15' }),
@@ -193,6 +202,13 @@ describe('reportJobPayloadSchema', () => {
     expect(reportJobPayloadSchema.parse({ userId: 'user-1', reportType: 'monthly' })).toEqual({
       userId: 'user-1',
       reportType: 'monthly',
+    });
+    expect(
+      reportJobPayloadSchema.parse({ userId: 'user-1', reportType: 'monthly', date: '2026-09-15' }),
+    ).toEqual({
+      userId: 'user-1',
+      reportType: 'monthly',
+      date: '2026-09-15',
     });
   });
 

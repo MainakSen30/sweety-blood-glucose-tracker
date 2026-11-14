@@ -27,7 +27,7 @@ export type MonthlyReportDateQuery = z.infer<typeof monthlyReportDateQuerySchema
 /**
  * Body for submitting an asynchronous report-generation job. Daily and
  * month-to-date require their reference date; the previous-month report
- * derives its period from today in Asia/Kolkata and takes no date.
+ * accepts an optional reference date (falling back to today in Asia/Kolkata).
  */
 export const reportJobSubmitSchema = z
   .object({
@@ -41,13 +41,6 @@ export const reportJobSubmitSchema = z
       ctx.addIssue({
         code: 'custom',
         message: 'A report date is required for daily and month-to-date reports.',
-      });
-    }
-
-    if (body.reportType === 'monthly' && body.date !== undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'The previous-month report takes no date.',
       });
     }
   });

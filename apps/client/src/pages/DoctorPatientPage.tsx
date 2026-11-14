@@ -203,8 +203,9 @@ export default function DoctorPatientPage() {
     setJobError(null);
 
     try {
-      const date =
-        tab === 'monthly' ? undefined : inputValueToApiDate(tab === 'daily' ? dailyDate : mtdDate);
+      const date = inputValueToApiDate(
+        tab === 'daily' ? dailyDate : tab === 'month-to-date' ? mtdDate : monthlyDate,
+      );
       const submission = await submitPatientReportJob(patientId, {
         reportType: tab,
         ...(date ? { date } : {}),

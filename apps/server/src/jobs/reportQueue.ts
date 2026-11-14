@@ -42,7 +42,7 @@ export const reportJobPayloadSchema = z
      */
     requestedBy: z.string().min(1).optional(),
     reportType: z.enum(['daily', 'month-to-date', 'monthly']),
-    /** Internal YYYY-MM-DD reference date; monthly reports derive their period instead. */
+    /** Internal YYYY-MM-DD reference date; for monthly reports, defaults to today in Asia/Kolkata when omitted. */
     date: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)

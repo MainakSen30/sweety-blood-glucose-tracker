@@ -174,7 +174,7 @@ export default function ReportsPage() {
           ? inputValueToApiDate(dailyDate)
           : tab === 'month-to-date'
             ? inputValueToApiDate(mtdDate)
-            : undefined;
+            : inputValueToApiDate(monthlyDate);
 
       const submission = await submitReportJob({
         reportType: tab,

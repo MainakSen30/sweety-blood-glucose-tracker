@@ -158,6 +158,27 @@ describe('processReportJob', () => {
     expect(aggregateSpy).toHaveBeenCalledWith(userId, period.startDate, period.endDate);
   });
 
+  it('generates a previous-month report relative to the supplied date', async () => {
+    const userId = await makeUser('job-monthly-historical@example.com');
+    // Reference date: 2026-10-15 -> previous month is 2026-09-01 to 2026-09-30
+    const period = previousMonthRange('2026-10-15');
+    await readingsRepository.insertReading({
+      userId,
+      readingDate: '2026-09-20',
+      slot: 'after_lunch',
+      value: 142,
+    });
+
+    const job = jobFor({ userId, reportType: 'monthly', date: '2026-10-15' });
+    const report = await processReportJob(job);
+
+    expect(report).toMatchObject({
+      reportType: 'monthly',
+      summary: { highest: 142, lowest: 142, average: 142, totalReadings: 1 },
+    });
+    expect(aggregateSpy).toHaveBeenCalledWith(userId, period.startDate, period.endDate);
+  });
+
   it('serves a second identical job from the report cache without new queries', async () => {
     const userId = await makeUser('job-cache@example.com');
     await readingsRepository.insertReading({
