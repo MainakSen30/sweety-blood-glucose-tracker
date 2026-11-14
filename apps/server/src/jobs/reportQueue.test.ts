@@ -8,6 +8,10 @@ import { HttpError } from '../utils/errors.js';
  * 503 degradation when the queue is unreachable.
  */
 
+const access = vi.hoisted(() => ({
+  hasActiveAssignment: vi.fn(async () => true),
+}));
+
 const bullmq = vi.hoisted(() => {
   const created: Array<{ name: string; opts: Record<string, unknown> }> = [];
   let getJobImpl: (jobId: string) => Promise<unknown> = async () => null;
@@ -81,6 +85,12 @@ vi.mock('bullmq', () => ({
   },
 }));
 
+// The queue re-checks doctor consent on result retrieval; this unit suite
+// replaces the database-backed check with a controllable spy.
+vi.mock('../modules/access/access.repository.js', () => ({
+  hasActiveAssignment: access.hasActiveAssignment,
+}));
+
 import {
   REPORT_QUEUE_NAME,
   REPORT_QUEUE_PREFIX,
@@ -96,6 +106,7 @@ import {
 
 interface FakeJobInit {
   userId: string;
+  requestedBy?: string;
   state: string;
   returnvalue?: unknown;
   failedReason?: string;
@@ -104,7 +115,12 @@ interface FakeJobInit {
 function fakeJob(init: FakeJobInit) {
   return {
     id: 'rpt:job-1',
-    data: { userId: init.userId, reportType: 'daily', date: '2026-01-15' },
+    data: {
+      userId: init.userId,
+      ...(init.requestedBy ? { requestedBy: init.requestedBy } : {}),
+      reportType: 'daily',
+      date: '2026-01-15',
+    },
     returnvalue: init.returnvalue,
     failedReason: init.failedReason,
     progress: null,
@@ -117,6 +133,8 @@ const dailyParams = { reportType: 'daily' as const, date: '2026-01-15' };
 
 beforeEach(async () => {
   bullmq.reset();
+  access.hasActiveAssignment.mockReset();
+  access.hasActiveAssignment.mockResolvedValue(true);
   // Drop the module-level queue singleton so every test starts unconfigured.
   await closeReportQueue();
 });
@@ -320,6 +338,56 @@ describe('ownership and status/result lookups', () => {
     expect(await getReportJobResult('rpt:x', 'user-1')).toEqual({
       state: 'failed',
       reason: 'boom',
+    });
+  });
+
+  it('releases a doctor-requested result only while consent is active', async () => {
+    const report = { reportType: 'daily', summary: { totalReadings: 2 } };
+    bullmq.setGetJob(async () =>
+      fakeJob({
+        userId: 'patient-1',
+        requestedBy: 'doctor-1',
+        state: 'completed',
+        returnvalue: report,
+      }),
+    );
+
+    expect(await getReportJobResult('rpt:x', 'doctor-1', 'patient-1')).toEqual({
+      state: 'completed',
+      report,
+    });
+    expect(access.hasActiveAssignment).toHaveBeenCalledWith('doctor-1', 'patient-1');
+
+    access.hasActiveAssignment.mockResolvedValueOnce(false);
+    expect(await getReportJobResult('rpt:x', 'doctor-1', 'patient-1')).toBeNull();
+  });
+
+  it("does not consult consent for the patient's own job", async () => {
+    bullmq.setGetJob(async () =>
+      fakeJob({ userId: 'patient-1', state: 'completed', returnvalue: { ok: true } }),
+    );
+
+    expect(await getReportJobResult('rpt:x', 'patient-1')).toEqual({
+      state: 'completed',
+      report: { ok: true },
+    });
+    expect(access.hasActiveAssignment).not.toHaveBeenCalled();
+  });
+
+  it('only addresses a job under the patient path it was generated for', async () => {
+    bullmq.setGetJob(async () =>
+      fakeJob({
+        userId: 'patient-1',
+        requestedBy: 'doctor-1',
+        state: 'completed',
+        returnvalue: { ok: true },
+      }),
+    );
+
+    expect(await getReportJobResult('rpt:x', 'doctor-1', 'patient-2')).toBeNull();
+    expect(await getReportJobStatus('rpt:x', 'doctor-1', 'patient-2')).toBeNull();
+    expect(await getReportJobStatus('rpt:x', 'doctor-1', 'patient-1')).toMatchObject({
+      status: 'completed',
     });
   });
 });

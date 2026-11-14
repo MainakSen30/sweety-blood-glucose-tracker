@@ -14,7 +14,7 @@ import { getRedisClient, getRedisStatus, type RedisStatus } from './redisClient.
  *   so the round-trip is lossless.
  */
 
-const KEY_PREFIX = 'sweety:v1';
+const KEY_PREFIX = 'sweety:v2';
 const USER_VERSION_PREFIX = `${KEY_PREFIX}:user-version`;
 
 export type ReportType = 'daily' | 'month-to-date' | 'monthly';
@@ -25,7 +25,13 @@ export type ReportType = 'daily' | 'month-to-date' | 'monthly';
  * validation has already converted and range-checked the DD-MM-YYYY query.
  */
 export interface ReportCacheKeyParts {
+  /** Patient whose readings the report is computed from. */
   userId: string;
+  /**
+   * Authenticated caller. Defaults to `userId` for a patient's own report;
+   * a doctor's view is keyed separately even though it reads the same data.
+   */
+  requesterId?: string;
   reportType: ReportType;
   /** Daily and month-to-date reports are keyed by their reference date. */
   date?: string;
@@ -36,20 +42,23 @@ export interface ReportCacheKeyParts {
 }
 
 /**
- * `sweety:v1:reports:u{userId}:v{version}:{type}:{period}`
+ * `sweety:v2:reports:r{requesterId}:u{userId}:v{version}:{type}:{period}`
  *
- * The version embeds the user's invalidation generation, so bumping the
- * counter instantly orphans every cached entry for that user (they expire
- * within the TTL) without any wildcard deletion or key enumeration.
+ * The requester is part of the key so patient, doctor, and different doctors'
+ * views never share an entry. The version embeds the *patient's* invalidation
+ * generation, so a reading mutation or consent revocation orphans every
+ * cached view of that patient's reports (they expire within the TTL) without
+ * any wildcard deletion or key enumeration.
  */
 export function buildReportCacheKey(parts: ReportCacheKeyParts, version: number): string {
-  const user = `u${parts.userId}:v${version}`;
+  const requester = `r${parts.requesterId ?? parts.userId}`;
+  const owner = `u${parts.userId}:v${version}`;
   const period =
     parts.reportType === 'monthly'
       ? `${parts.startDate ?? ''}:${parts.endDate ?? ''}`
       : (parts.date ?? '');
 
-  return `${KEY_PREFIX}:reports:${user}:${parts.reportType}:${period}`;
+  return `${KEY_PREFIX}:reports:${requester}:${owner}:${parts.reportType}:${period}`;
 }
 
 export function buildUserVersionKey(userId: string): string {

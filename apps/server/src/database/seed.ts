@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { config as loadEnvFile } from 'dotenv';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Pool } from 'pg';
 import * as schema from './schema.js';
 import { todayInAppTimezone } from '../utils/date.js';
@@ -188,6 +188,9 @@ if (isDirectExecution) {
 const DEMO_EMAIL = 'demo@sweety.local';
 const DEMO_PASSWORD = 'Demo1234!';
 const DEMO_NAME = 'Demo User';
+const DEMO_DOCTOR_EMAIL = 'doctor@sweety.local';
+const DEMO_DOCTOR_PASSWORD = 'Doctor1234!';
+const DEMO_DOCTOR_NAME = 'Dr. Demo';
 /** Must match BCRYPT_COST_FACTOR in auth.repository.ts */
 const BCRYPT_COST_FACTOR = 12;
 
@@ -295,38 +298,91 @@ async function seed(): Promise<void> {
   const pool = new Pool({ connectionString: rawDatabaseUrl as string });
   const db = drizzle(pool, { schema });
 
-  try {
-    // ------------------------------------------------------------------
-    // 1. Upsert the demo user (insert-if-missing; never overwrite password)
-    // ------------------------------------------------------------------
-    console.log(`\n[seed] Looking up demo account <${DEMO_EMAIL}>…`);
-
-    const existingUsers = await db
-      .select({ id: schema.users.id })
+  /**
+   * Insert-if-missing account helper. Passwords of existing accounts are never
+   * overwritten. The role is only corrected here because this is a guarded
+   * demo seed; production promotions go through the audited CLI.
+   */
+  async function ensureDemoAccount(
+    email: string,
+    name: string,
+    password: string,
+    role: schema.UserRole,
+  ): Promise<string> {
+    const existing = await db
+      .select({ id: schema.users.id, role: schema.users.role })
       .from(schema.users)
-      .where(sql`lower(${schema.users.email}) = ${DEMO_EMAIL.toLowerCase()}`)
+      .where(sql`lower(${schema.users.email}) = ${email.toLowerCase()}`)
       .limit(1);
 
-    let demoUserId: string;
+    const account = existing[0];
 
-    if (existingUsers.length > 0 && existingUsers[0]) {
-      demoUserId = existingUsers[0].id;
-      console.log(`[seed] Demo account already exists (id=${demoUserId}). Skipping user insert.`);
-    } else {
-      console.log('[seed] Demo account not found — creating…');
-      const passwordHash = await bcrypt.hash(DEMO_PASSWORD, BCRYPT_COST_FACTOR);
-
-      const inserted = await db
-        .insert(schema.users)
-        .values({ name: DEMO_NAME, email: DEMO_EMAIL, passwordHash })
-        .returning({ id: schema.users.id });
-
-      const newUser = inserted[0];
-      if (!newUser) {
-        throw new Error('Demo user insertion did not return a row.');
+    if (account) {
+      if (account.role !== role) {
+        await db
+          .update(schema.users)
+          .set({ role, updatedAt: new Date() })
+          .where(eq(schema.users.id, account.id));
       }
-      demoUserId = newUser.id;
-      console.log(`[seed] Demo account created (id=${demoUserId}).`);
+
+      console.log(`[seed] ${email} already exists (id=${account.id}). Skipping insert.`);
+      return account.id;
+    }
+
+    const passwordHash = await bcrypt.hash(password, BCRYPT_COST_FACTOR);
+    const inserted = await db
+      .insert(schema.users)
+      .values({ name, email, passwordHash, role })
+      .returning({ id: schema.users.id });
+
+    const newUser = inserted[0];
+
+    if (!newUser) {
+      throw new Error(`Insertion of ${email} did not return a row.`);
+    }
+
+    console.log(`[seed] Created ${email} (id=${newUser.id}).`);
+    return newUser.id;
+  }
+
+  try {
+    // ------------------------------------------------------------------
+    // 1. Upsert the demo patient and demo doctor
+    // ------------------------------------------------------------------
+    console.log('\n[seed] Ensuring demo accounts exist…');
+    const demoUserId = await ensureDemoAccount(DEMO_EMAIL, DEMO_NAME, DEMO_PASSWORD, 'patient');
+    const demoDoctorId = await ensureDemoAccount(
+      DEMO_DOCTOR_EMAIL,
+      DEMO_DOCTOR_NAME,
+      DEMO_DOCTOR_PASSWORD,
+      'doctor',
+    );
+
+    // A pre-existing relationship of any status is left untouched: re-running
+    // the seed must never silently restore consent the patient revoked.
+    const existingAssignment = await db
+      .select({ id: schema.doctorPatientAssignments.id })
+      .from(schema.doctorPatientAssignments)
+      .where(
+        and(
+          eq(schema.doctorPatientAssignments.doctorId, demoDoctorId),
+          eq(schema.doctorPatientAssignments.patientId, demoUserId),
+        ),
+      )
+      .limit(1);
+
+    if (existingAssignment.length === 0) {
+      const now = new Date();
+      await db.insert(schema.doctorPatientAssignments).values({
+        doctorId: demoDoctorId,
+        patientId: demoUserId,
+        status: 'active',
+        acceptedAt: now,
+        expiresAt: new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000),
+      });
+      console.log('[seed] Created an active demo doctor–patient assignment.');
+    } else {
+      console.log('[seed] Existing demo doctor–patient relationship left untouched.');
     }
 
     // ------------------------------------------------------------------
@@ -384,8 +440,10 @@ async function seed(): Promise<void> {
     const totalReadings = countResult[0]?.count ?? 0;
 
     console.log('\n[seed] ✔  Seed complete.');
-    console.log(`[seed]    Demo email    : ${DEMO_EMAIL}`);
-    console.log(`[seed]    Demo password : ${DEMO_PASSWORD}`);
+    console.log(`[seed]    Demo patient email    : ${DEMO_EMAIL}`);
+    console.log(`[seed]    Demo patient password : ${DEMO_PASSWORD}`);
+    console.log(`[seed]    Demo doctor email     : ${DEMO_DOCTOR_EMAIL}`);
+    console.log(`[seed]    Demo doctor password  : ${DEMO_DOCTOR_PASSWORD}`);
     console.log(`[seed]    Total readings in DB for demo user: ${totalReadings}`);
     console.log('[seed]    NOTE: These are synthetic demonstration values — not medical data.\n');
   } finally {

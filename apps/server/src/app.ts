@@ -7,6 +7,8 @@ import { healthRouter } from './modules/health/health.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { readingsRouter } from './modules/readings/readings.routes.js';
 import { reportsRouter } from './modules/reports/reports.routes.js';
+import { patientAccessRouter } from './modules/access/access.routes.js';
+import { doctorRouter } from './modules/doctor/doctor.routes.js';
 import { HttpError } from './utils/errors.js';
 
 const app = express();
@@ -26,6 +28,8 @@ app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/readings', readingsRouter);
 app.use('/api/reports', reportsRouter);
+app.use('/api/patient', patientAccessRouter);
+app.use('/api/doctor', doctorRouter);
 
 app.use((_request, response) => {
   response.status(404).json({

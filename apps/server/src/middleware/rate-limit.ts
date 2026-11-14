@@ -50,3 +50,15 @@ export function createAuthRateLimiter(overrides: AuthRateLimiterOverrides = {}):
 export const authRateLimiter = createAuthRateLimiter({
   skip: () => env.NODE_ENV === 'test',
 });
+
+/**
+ * Rate limiter for POST /api/doctor/invitations. Invitations are the only
+ * doctor endpoint that accepts an email address, so this bounds account
+ * enumeration attempts and invitation spam. Skipped in tests for the same
+ * reason as the auth limiter.
+ */
+export const doctorInvitationRateLimiter = createAuthRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skip: () => env.NODE_ENV === 'test',
+});

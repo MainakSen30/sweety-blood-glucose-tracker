@@ -4,6 +4,7 @@ import {
   getMonthToDateReportCached,
   getPreviousMonthReportCached,
 } from '../modules/reports/reports.cache.js';
+import { isDoctorAuthorizedForPatient } from '../modules/access/access.service.js';
 import { reportJobPayloadSchema, type ReportJobPayload } from './reportQueue.js';
 import type { AsyncReportResult } from './reportQueue.js';
 
@@ -38,6 +39,15 @@ export async function processReportJob(job: ReportJobLike): Promise<AsyncReportR
     throw new UnrecoverableError('Invalid report job payload.');
   }
 
+  // Consent can be revoked between submission and processing. A dead
+  // relationship is permanent, so the job must not burn retries.
+  if (
+    payload.requestedBy !== undefined &&
+    !(await isDoctorAuthorizedForPatient(payload.requestedBy, payload.userId))
+  ) {
+    throw new UnrecoverableError('Doctor access to this patient is no longer active.');
+  }
+
   console.log(
     `[report-worker] job processing ${payload.reportType} report (userId ${payload.userId}).`,
   );
@@ -49,10 +59,10 @@ export async function processReportJob(job: ReportJobLike): Promise<AsyncReportR
 
   const report =
     payload.reportType === 'daily'
-      ? await getDailyReportCached(payload.userId, payload.date!)
+      ? await getDailyReportCached(payload.userId, payload.date!, payload.requestedBy)
       : payload.reportType === 'month-to-date'
-        ? await getMonthToDateReportCached(payload.userId, payload.date!)
-        : await getPreviousMonthReportCached(payload.userId);
+        ? await getMonthToDateReportCached(payload.userId, payload.date!, payload.requestedBy)
+        : await getPreviousMonthReportCached(payload.userId, payload.requestedBy);
 
   console.log(
     `[report-worker] report generated in ${Date.now() - startedAt}ms (${payload.reportType}).`,

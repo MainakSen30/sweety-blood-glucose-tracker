@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth } from '../../middleware/auth.js';
+import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { daily, monthToDate, monthly } from './reports.controller.js';
 import {
   reportJobResultHandler,
@@ -9,8 +9,9 @@ import {
 
 export const reportsRouter = Router();
 
-// Every report endpoint requires an authenticated user.
-reportsRouter.use(requireAuth);
+// Every self-report endpoint belongs to the patient role. Doctors read
+// assigned patients' reports through `/api/doctor/patients/:patientId/reports`.
+reportsRouter.use(requireAuth, requireRole('patient'));
 
 reportsRouter.get('/daily', daily);
 reportsRouter.get('/month-to-date', monthToDate);

@@ -171,8 +171,8 @@ describe('report caching through the API', () => {
     });
     // The cache was keyed with each caller's authenticated user id.
     const cachedKeys = [...fake.store.keys()].filter((key) => key.includes(':reports:'));
-    expect(cachedKeys.some((key) => key.startsWith('sweety:v1:reports:u'))).toBe(true);
-    expect(cachedKeys.every((key) => /:reports:u[^:]+:v\d+:/.test(key))).toBe(true);
+    expect(cachedKeys.some((key) => key.startsWith('sweety:v2:reports:r'))).toBe(true);
+    expect(cachedKeys.every((key) => /:reports:r[^:]+:u[^:]+:v\d+:/.test(key))).toBe(true);
   });
 });
 

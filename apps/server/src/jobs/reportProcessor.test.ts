@@ -1,6 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UnrecoverableError } from 'bullmq';
+import { eq } from 'drizzle-orm';
 import { closeTestPool, resetDatabase } from '../../tests/database.js';
+import { db } from '../database/index.js';
+import { doctorPatientAssignments, users } from '../database/schema.js';
 import { todayInAppTimezone } from '../utils/date.js';
 import { previousMonthRange } from '../modules/reports/reports.service.js';
 import * as readingsRepository from '../modules/readings/readings.repository.js';
@@ -75,6 +78,22 @@ async function makeUser(email: string): Promise<string> {
     password: 'SecurePassword123',
   });
   return session.user.id;
+}
+
+async function makeDoctor(email: string): Promise<string> {
+  const doctorId = await makeUser(email);
+  await db.update(users).set({ role: 'doctor' }).where(eq(users.id, doctorId));
+  return doctorId;
+}
+
+async function assign(doctorId: string, patientId: string): Promise<void> {
+  await db.insert(doctorPatientAssignments).values({
+    doctorId,
+    patientId,
+    status: 'active',
+    acceptedAt: new Date(),
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
 }
 
 function jobFor(data: unknown): ReportJobLike & { updateProgress: ReturnType<typeof vi.fn> } {
@@ -192,6 +211,56 @@ describe('processReportJob', () => {
     expect(capturedError).toBeInstanceOf(Error);
     expect((capturedError as Error).message).toBe('PostgreSQL connection failed');
     expect(capturedError).not.toBeInstanceOf(UnrecoverableError);
+  });
+
+  it('generates a doctor-requested report only while consent is active', async () => {
+    const patientId = await makeUser('job-patient@example.com');
+    const doctorId = await makeDoctor('job-doctor@example.com');
+    await assign(doctorId, patientId);
+    await readingsRepository.insertReading({
+      userId: patientId,
+      readingDate: '2026-03-05',
+      slot: 'morning',
+      value: 101,
+    });
+
+    const job = jobFor({
+      userId: patientId,
+      requestedBy: doctorId,
+      reportType: 'daily',
+      date: '2026-03-05',
+    });
+    const report = await processReportJob(job);
+    expect(report).toMatchObject({ reportType: 'daily', summary: { totalReadings: 1 } });
+
+    await db
+      .update(doctorPatientAssignments)
+      .set({ status: 'revoked', revokedAt: new Date() })
+      .where(eq(doctorPatientAssignments.doctorId, doctorId));
+
+    const afterRevoke = jobFor({
+      userId: patientId,
+      requestedBy: doctorId,
+      reportType: 'daily',
+      date: '2026-03-05',
+    });
+
+    await expect(processReportJob(afterRevoke)).rejects.toBeInstanceOf(UnrecoverableError);
+    expect(afterRevoke.updateProgress).not.toHaveBeenCalled();
+  });
+
+  it('rejects a doctor-requested job with no active assignment', async () => {
+    const patientId = await makeUser('job-patient-2@example.com');
+    const doctorId = await makeDoctor('job-doctor-2@example.com');
+
+    const job = jobFor({
+      userId: patientId,
+      requestedBy: doctorId,
+      reportType: 'monthly',
+    });
+
+    await expect(processReportJob(job)).rejects.toBeInstanceOf(UnrecoverableError);
+    expect(aggregateSpy).not.toHaveBeenCalled();
   });
 });
 

@@ -56,16 +56,25 @@ describe('buildReportCacheKey', () => {
   it('is namespaced, versioned, user-specific, and type-specific', () => {
     expect(
       buildReportCacheKey({ userId: 'user-1', reportType: 'daily', date: '2026-01-15' }, 3),
-    ).toBe('sweety:v1:reports:uuser-1:v3:daily:2026-01-15');
+    ).toBe('sweety:v2:reports:ruser-1:uuser-1:v3:daily:2026-01-15');
     expect(
       buildReportCacheKey({ userId: 'user-1', reportType: 'month-to-date', date: '2026-01-15' }, 0),
-    ).toBe('sweety:v1:reports:uuser-1:v0:month-to-date:2026-01-15');
+    ).toBe('sweety:v2:reports:ruser-1:uuser-1:v0:month-to-date:2026-01-15');
     expect(
       buildReportCacheKey(
         { userId: 'user-1', reportType: 'monthly', startDate: '2025-12-01', endDate: '2025-12-31' },
         0,
       ),
-    ).toBe('sweety:v1:reports:uuser-1:v0:monthly:2025-12-01:2025-12-31');
+    ).toBe('sweety:v2:reports:ruser-1:uuser-1:v0:monthly:2025-12-01:2025-12-31');
+  });
+
+  it('separates the patient view from each doctor requester', () => {
+    const parts = { userId: 'patient-1', reportType: 'daily' as const, date: '2026-01-15' };
+    const patient = buildReportCacheKey(parts, 0);
+    const doctorA = buildReportCacheKey({ ...parts, requesterId: 'doctor-a' }, 0);
+    const doctorB = buildReportCacheKey({ ...parts, requesterId: 'doctor-b' }, 0);
+
+    expect(new Set([patient, doctorA, doctorB]).size).toBe(3);
   });
 
   it('never lets two users share a key, and versions invalidate keys', () => {

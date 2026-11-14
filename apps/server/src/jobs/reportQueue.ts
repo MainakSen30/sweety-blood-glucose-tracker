@@ -3,6 +3,7 @@ import type { RedisOptions } from 'bullmq';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { HttpError } from '../utils/errors.js';
+import { hasActiveAssignment } from '../modules/access/access.repository.js';
 import { processReportJob } from './reportProcessor.js';
 import type { DailyReport, PeriodReport } from '../modules/reports/reports.types.js';
 
@@ -16,7 +17,7 @@ import type { DailyReport, PeriodReport } from '../modules/reports/reports.types
  * report-cache client, so BullMQ never reuses that instance.
  *
  * Key separation: BullMQ keys live under `sweety:jobs:*` while report-cache
- * keys live under `sweety:v1:*`. Invalidation never deletes queue data
+ * keys live under `sweety:v2:*`. Invalidation never deletes queue data
  * (it only increments a user version counter).
  */
 
@@ -34,6 +35,12 @@ export type AsyncReportResult = DailyReport | PeriodReport;
 export const reportJobPayloadSchema = z
   .object({
     userId: z.string().min(1),
+    /**
+     * Doctor who requested the report. Absent for patient-owned jobs. The
+     * worker and result handler re-verify the active assignment, so this is
+     * never treated as permanent authorization.
+     */
+    requestedBy: z.string().min(1).optional(),
     reportType: z.enum(['daily', 'month-to-date', 'monthly']),
     /** Internal YYYY-MM-DD reference date; monthly reports derive their period instead. */
     date: z
@@ -49,6 +56,7 @@ export const reportJobPayloadSchema = z
 
 export interface ReportJobPayload {
   userId: string;
+  requestedBy?: string;
   reportType: 'daily' | 'month-to-date' | 'monthly';
   date?: string;
 }
@@ -94,12 +102,17 @@ export function getReportQueue(): Queue<ReportJobPayload, AsyncReportResult> {
 
 /**
  * Deterministic id: duplicate in-flight submissions return the same job.
+ * Doctor-requested jobs include the requester, so the patient's own job and
+ * each doctor's job for the same patient/date never collide, and one doctor
+ * can never address another doctor's job id.
  * Note: BullMQ custom job IDs cannot contain ":" as colon is BullMQ's key separator.
  */
 export function buildReportJobId(
   payload: Omit<ReportJobPayload, 'userId'> & { userId: string },
 ): string {
-  return `rpt_${payload.userId}_${payload.reportType}_${payload.date ?? 'monthly'}`;
+  const owner = payload.requestedBy ? `${payload.requestedBy}_${payload.userId}` : payload.userId;
+
+  return `rpt_${owner}_${payload.reportType}_${payload.date ?? 'monthly'}`;
 }
 
 export interface ReportJobSubmission {
@@ -122,9 +135,14 @@ const IN_FLIGHT_STATES: ReadonlySet<string> = new Set(['waiting', 'delayed', 'ac
 export async function submitReportJob(
   userId: string,
   params: { reportType: ReportJobPayload['reportType']; date?: string },
+  requestedBy?: string,
 ): Promise<ReportJobSubmission> {
   const reportQueue = getReportQueue();
-  const payload: ReportJobPayload = { userId, ...params };
+  const payload: ReportJobPayload = {
+    userId,
+    ...(requestedBy ? { requestedBy } : {}),
+    ...params,
+  };
   const jobId = buildReportJobId(payload);
 
   try {
@@ -156,22 +174,25 @@ export async function submitReportJob(
 }
 
 /**
- * Fetches a job only when it belongs to `userId`. Job ids are never trusted
- * as authorization — ownership lives in the payload's server-side user id.
+ * Fetches a job only when it belongs to the requester. Job ids are never
+ * trusted as authorization — ownership lives in the payload's server-side
+ * user ids (the patient owner and, for doctor-requested jobs, the doctor).
  * Returns `null` for unknown or foreign-owned jobs (callers respond 404).
  */
 export async function findOwnedReportJob(
   jobId: string,
-  userId: string,
+  requesterId: string,
 ): Promise<Job<ReportJobPayload, AsyncReportResult> | null> {
   try {
     const job = await getReportQueue().getJob(jobId);
 
-    if (!job || job.data.userId !== userId) {
+    if (!job) {
       return null;
     }
 
-    return job;
+    const ownsJob = job.data.userId === requesterId || job.data.requestedBy === requesterId;
+
+    return ownsJob ? job : null;
   } catch (error) {
     console.error(`Report queue lookup failed: ${describeError(error)}`);
     throw new HttpError(503, 'Report queue is unavailable. Please try again later.');
@@ -187,14 +208,19 @@ export interface ReportJobStatusDto {
   failedReason?: string;
 }
 
-/** Status DTO for `GET /jobs/:jobId`; `null` becomes a 404 upstream. */
+/**
+ * Status DTO for `GET /jobs/:jobId`; `null` becomes a 404 upstream.
+ * `expectedPatientId` is supplied by the doctor routes so a job can only be
+ * addressed under the patient path it was generated for.
+ */
 export async function getReportJobStatus(
   jobId: string,
   userId: string,
+  expectedPatientId?: string,
 ): Promise<ReportJobStatusDto | null> {
   const job = await findOwnedReportJob(jobId, userId);
 
-  if (!job) {
+  if (!job || (expectedPatientId !== undefined && job.data.userId !== expectedPatientId)) {
     return null;
   }
 
@@ -219,11 +245,22 @@ export type ReportJobResultOutcome =
 export async function getReportJobResult(
   jobId: string,
   userId: string,
+  expectedPatientId?: string,
 ): Promise<ReportJobResultOutcome | null> {
   const job = await findOwnedReportJob(jobId, userId);
 
-  if (!job) {
+  if (!job || (expectedPatientId !== undefined && job.data.userId !== expectedPatientId)) {
     return null;
+  }
+
+  // A doctor-requested result is only released while the patient's consent is
+  // still active. The patient's own job is unaffected by revocation.
+  if (job.data.requestedBy === userId) {
+    const stillAuthorized = await hasActiveAssignment(userId, job.data.userId);
+
+    if (!stillAuthorized) {
+      return null;
+    }
   }
 
   const state = await job.getState();

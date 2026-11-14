@@ -51,6 +51,7 @@ describe('POST /api/auth/register', () => {
       id: expect.any(String),
       name: 'Demo User',
       email: 'demo@example.com',
+      role: 'patient',
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -119,6 +120,7 @@ describe('POST /api/auth/login', () => {
       id: expect.any(String),
       name: 'Demo User',
       email: 'demo@example.com',
+      role: 'patient',
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });
@@ -163,6 +165,7 @@ describe('GET /api/auth/me', () => {
       id: expect.any(String),
       name: 'Demo User',
       email: 'demo@example.com',
+      role: 'patient',
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
     });

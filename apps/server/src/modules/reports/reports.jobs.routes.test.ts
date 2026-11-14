@@ -39,6 +39,9 @@ vi.mock('../../middleware/auth.js', () => ({
 
     return res.status(401).json({ status: 'error', message: 'Invalid or expired token' });
   },
+  // The route modules compose `requireRole`; this suite isolates the patient
+  // endpoints and only needs the role gate to pass through.
+  requireRole: () => (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 
 beforeEach(() => {
