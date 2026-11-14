@@ -21,8 +21,9 @@ export function getMonthToDateReport(date: string): Promise<PeriodReport> {
   return apiFetch<PeriodReport>(`/api/reports/month-to-date?date=${encodeURIComponent(date)}`);
 }
 
-export function getMonthlyReport(): Promise<PeriodReport> {
-  return apiFetch<PeriodReport>('/api/reports/monthly');
+export function getMonthlyReport(date?: string): Promise<PeriodReport> {
+  const query = date ? `?date=${encodeURIComponent(date)}` : '';
+  return apiFetch<PeriodReport>(`/api/reports/monthly${query}`);
 }
 
 /** Enqueues an asynchronous report generation job with BullMQ. */

@@ -51,6 +51,7 @@ export default function DoctorPatientPage() {
 
   const [dailyDate, setDailyDate] = useState(apiDateToInputValue(todayApiDate()));
   const [mtdDate, setMtdDate] = useState(apiDateToInputValue(todayApiDate()));
+  const [monthlyDate, setMonthlyDate] = useState(apiDateToInputValue(todayApiDate()));
   const [daily, setDaily] = useState<DailyReport | null>(null);
   const [period, setPeriod] = useState<PeriodReport | null>(null);
   const [periodReadings, setPeriodReadings] = useState<Reading[]>([]);
@@ -83,14 +84,14 @@ export default function DoctorPatientPage() {
     };
   }, [patientId]);
 
-  const requestKey = `${patientId}|${tab}|${dailyDate}|${mtdDate}|${dateFilter}|${page}|${pageSize}|${reloadNonce}`;
+  const requestKey = `${patientId}|${tab}|${dailyDate}|${mtdDate}|${monthlyDate}|${dateFilter}|${page}|${pageSize}|${reloadNonce}`;
   const loading = loadedKey !== requestKey;
 
   useEffect(() => {
     if (!patientId) return;
 
     let cancelled = false;
-    const key = `${patientId}|${tab}|${dailyDate}|${mtdDate}|${dateFilter}|${page}|${pageSize}|${reloadNonce}`;
+    const key = `${patientId}|${tab}|${dailyDate}|${mtdDate}|${monthlyDate}|${dateFilter}|${page}|${pageSize}|${reloadNonce}`;
 
     void (async () => {
       try {
@@ -124,7 +125,7 @@ export default function DoctorPatientPage() {
           const next =
             tab === 'month-to-date'
               ? await getPatientMonthToDateReport(patientId, inputValueToApiDate(mtdDate))
-              : await getPatientMonthlyReport(patientId);
+              : await getPatientMonthlyReport(patientId, inputValueToApiDate(monthlyDate));
           const nextReadings = await listAllPatientReadings(patientId, {
             from: next.period.startDate,
             to: next.period.endDate,
@@ -150,7 +151,7 @@ export default function DoctorPatientPage() {
     return () => {
       cancelled = true;
     };
-  }, [patientId, tab, dailyDate, mtdDate, dateFilter, page, pageSize, reloadNonce]);
+  }, [patientId, tab, dailyDate, mtdDate, monthlyDate, dateFilter, page, pageSize, reloadNonce]);
 
   const jobId = job?.jobId;
   const jobStatus = job?.status;
@@ -403,9 +404,9 @@ export default function DoctorPatientPage() {
         <PeriodReportView
           report={period}
           readings={periodReadings}
-          showDatePicker={tab === 'month-to-date'}
-          dateValue={mtdDate}
-          onDateChange={setMtdDate}
+          showDatePicker={true}
+          dateValue={tab === 'month-to-date' ? mtdDate : monthlyDate}
+          onDateChange={tab === 'month-to-date' ? setMtdDate : setMonthlyDate}
         />
       ) : null}
     </div>

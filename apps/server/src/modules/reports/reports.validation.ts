@@ -13,6 +13,18 @@ export const reportDateQuerySchema = z.object({
 export type ReportDateQuery = z.infer<typeof reportDateQuerySchema>;
 
 /**
+ * Query string for the previous-month report endpoint. The date is optional;
+ * when supplied, it must be a valid calendar date in DD-MM-YYYY format and not
+ * in the future (the same validation as daily and month-to-date). When omitted,
+ * the service resolves the report relative to today in the application timezone.
+ */
+export const monthlyReportDateQuerySchema = z.object({
+  date: dateOnlySchema.optional(),
+});
+
+export type MonthlyReportDateQuery = z.infer<typeof monthlyReportDateQuerySchema>;
+
+/**
  * Body for submitting an asynchronous report-generation job. Daily and
  * month-to-date require their reference date; the previous-month report
  * derives its period from today in Asia/Kolkata and takes no date.

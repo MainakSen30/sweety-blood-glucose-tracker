@@ -330,6 +330,42 @@ describe('invalidation through reading mutations', () => {
     expect(previousSecond.body.summary.totalReadings).toBe(1);
     expect(previousSecond.body.period.endDate).toBe(toDDMMYYYY(previousPeriod.endDate));
   });
+
+  it('caches historical previous-month reports under distinct keys based on reference date', async () => {
+    const cookie = await registerUser('cache-monthly-distinct@example.com');
+    // Seed readings in two distinct historical months:
+    // Aug 2026 (for date 15-09-2026 -> prev month Aug 2026)
+    // Sep 2026 (for date 15-10-2026 -> prev month Sep 2026)
+    await createReading(cookie, { readingDate: '15-08-2026', slot: 'morning', value: 105 });
+    await createReading(cookie, { readingDate: '15-09-2026', slot: 'morning', value: 195 });
+
+    const aggregateCallsBefore = aggregateSpy.mock.calls.length;
+
+    // First request for Sep 2026 reference date (covers Aug 2026)
+    const reportAug = await request(app)
+      .get('/api/reports/monthly?date=15-09-2026')
+      .set('Cookie', cookie);
+    expect(reportAug.status).toBe(200);
+    expect(reportAug.body.summary.highest).toBe(105);
+    expect(reportAug.body.period.startDate).toBe('01-08-2026');
+    expect(aggregateSpy.mock.calls.length).toBe(aggregateCallsBefore + 1);
+
+    // Second request with same date hits cache without running DB aggregate
+    const reportAugCached = await request(app)
+      .get('/api/reports/monthly?date=15-09-2026')
+      .set('Cookie', cookie);
+    expect(reportAugCached.body.summary.highest).toBe(105);
+    expect(aggregateSpy.mock.calls.length).toBe(aggregateCallsBefore + 1);
+
+    // Third request for Oct 2026 reference date (covers Sep 2026) cannot reuse Aug cache
+    const reportSep = await request(app)
+      .get('/api/reports/monthly?date=15-10-2026')
+      .set('Cookie', cookie);
+    expect(reportSep.status).toBe(200);
+    expect(reportSep.body.summary.highest).toBe(195);
+    expect(reportSep.body.period.startDate).toBe('01-09-2026');
+    expect(aggregateSpy.mock.calls.length).toBe(aggregateCallsBefore + 2);
+  });
 });
 
 describe('Redis failures fall back to PostgreSQL', () => {

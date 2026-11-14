@@ -50,11 +50,12 @@ export function getMonthToDateReportCached(
 
 export async function getPreviousMonthReportCached(
   userId: string,
+  referenceIsoDate: string = todayInAppTimezone(),
   requesterId: string = userId,
 ): Promise<PeriodReport> {
-  // The previous-month window depends on "today" in Asia/Kolkata, so it is
-  // part of the key: after midnight the first request recomputes.
-  const period = previousMonthRange(todayInAppTimezone());
+  // The previous-month window depends on the reference date (defaulting to
+  // "today" in Asia/Kolkata), so the calculated period is part of the key.
+  const period = previousMonthRange(referenceIsoDate);
   const parts: ReportCacheKeyParts = {
     userId,
     requesterId,
@@ -62,5 +63,7 @@ export async function getPreviousMonthReportCached(
     startDate: period.startDate,
     endDate: period.endDate,
   };
-  return appReportCache.getReport(parts, () => getPreviousMonthReport(userId));
+  return appReportCache.getReport(parts, () =>
+    getPreviousMonthReport(userId, referenceIsoDate),
+  );
 }

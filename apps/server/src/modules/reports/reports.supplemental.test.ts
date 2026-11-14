@@ -277,6 +277,38 @@ describe('GET /api/reports/monthly (supplemental)', () => {
     expect(result.endDate).toBe('2025-12-31');
   });
 
+  it('previousMonthRange calculates all required historical reference date examples', () => {
+    // 2026-10-15 -> September 2026 (30 days)
+    expect(previousMonthRange('2026-10-15')).toEqual({
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+    });
+
+    // 2027-01-10 -> December 2026 (31 days)
+    expect(previousMonthRange('2027-01-10')).toEqual({
+      startDate: '2026-12-01',
+      endDate: '2026-12-31',
+    });
+
+    // 2026-03-05 -> February 2026 (non-leap year: 28 days)
+    expect(previousMonthRange('2026-03-05')).toEqual({
+      startDate: '2026-02-01',
+      endDate: '2026-02-28',
+    });
+
+    // 2028-03-05 -> February 2028 (leap year: 29 days)
+    expect(previousMonthRange('2028-03-05')).toEqual({
+      startDate: '2028-02-01',
+      endDate: '2028-02-29',
+    });
+
+    // 2026-05-01 -> April 2026 (30 days)
+    expect(previousMonthRange('2026-05-01')).toEqual({
+      startDate: '2026-04-01',
+      endDate: '2026-04-30',
+    });
+  });
+
   it('user with no readings gets an empty previous-month report', async () => {
     const cookie = await registerTestUser('monthly-no-readings@example.com');
 

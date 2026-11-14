@@ -49,6 +49,7 @@ export default function ReportsPage() {
   const [tab, setTab] = useState<ReportTab>('daily');
   const [dailyDate, setDailyDate] = useState(apiDateToInputValue(todayApiDate()));
   const [mtdDate, setMtdDate] = useState(apiDateToInputValue(todayApiDate()));
+  const [monthlyDate, setMonthlyDate] = useState(apiDateToInputValue(todayApiDate()));
   const [state, setState] = useState<ReportState>(EMPTY_STATE);
   const [error, setError] = useState(false);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
@@ -59,13 +60,13 @@ export default function ReportsPage() {
   const [isSubmittingJob, setIsSubmittingJob] = useState(false);
   const [jobError, setJobError] = useState<string | null>(null);
 
-  const requestKey = `${tab}|${dailyDate}|${mtdDate}|${reloadNonce}`;
+  const requestKey = `${tab}|${dailyDate}|${mtdDate}|${monthlyDate}|${reloadNonce}`;
   // Until the response for the current tab/date arrives, there is nothing valid to show.
   const loading = loadedKey !== requestKey;
 
   useEffect(() => {
     let cancelled = false;
-    const key = `${tab}|${dailyDate}|${mtdDate}|${reloadNonce}`;
+    const key = `${tab}|${dailyDate}|${mtdDate}|${monthlyDate}|${reloadNonce}`;
 
     void (async () => {
       try {
@@ -77,7 +78,7 @@ export default function ReportsPage() {
           const periodReport =
             tab === 'month-to-date'
               ? await getMonthToDateReport(inputValueToApiDate(mtdDate))
-              : await getMonthlyReport();
+              : await getMonthlyReport(inputValueToApiDate(monthlyDate));
           // The chart draws actual readings across the report's own period,
           // so the dates come from the API response — no range math here.
           const periodReadings = await listAllReadings({
@@ -103,7 +104,7 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [tab, dailyDate, mtdDate, reloadNonce]);
+  }, [tab, dailyDate, mtdDate, monthlyDate, reloadNonce]);
 
   // Polling loop for active background report jobs.
   useEffect(() => {
@@ -309,7 +310,7 @@ export default function ReportsPage() {
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
-          key={`${tab}-${dailyDate}-${mtdDate}`}
+          key={`${tab}-${dailyDate}-${mtdDate}-${monthlyDate}`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -338,9 +339,9 @@ export default function ReportsPage() {
             <PeriodReportView
               report={state.period}
               readings={state.periodReadings}
-              showDatePicker={tab === 'month-to-date'}
-              dateValue={mtdDate}
-              onDateChange={setMtdDate}
+              showDatePicker={true}
+              dateValue={tab === 'month-to-date' ? mtdDate : monthlyDate}
+              onDateChange={tab === 'month-to-date' ? setMtdDate : setMonthlyDate}
             />
           ) : null}
         </motion.div>

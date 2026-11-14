@@ -6,7 +6,7 @@ import {
   getMonthToDateReportCached,
   getPreviousMonthReportCached,
 } from './reports.cache.js';
-import { reportDateQuerySchema } from './reports.validation.js';
+import { monthlyReportDateQuerySchema, reportDateQuerySchema } from './reports.validation.js';
 
 /**
  * Thin HTTP layer: validate the query string, call the service with the
@@ -47,7 +47,17 @@ export async function monthToDate(request: Request, response: Response): Promise
 
 export async function monthly(request: Request, response: Response): Promise<Response> {
   const userId = requireUserId(request);
-  const report = await getPreviousMonthReportCached(userId);
+  const parsedQuery = monthlyReportDateQuerySchema.safeParse(request.query);
+
+  if (!parsedQuery.success) {
+    return response.status(400).json({
+      status: 'error',
+      message: 'Validation failed',
+      details: formatValidationIssues(parsedQuery.error),
+    });
+  }
+
+  const report = await getPreviousMonthReportCached(userId, parsedQuery.data.date);
   return response.status(200).json(report);
 }
 

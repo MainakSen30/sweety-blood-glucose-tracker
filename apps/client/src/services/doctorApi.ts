@@ -120,8 +120,12 @@ export function getPatientMonthToDateReport(
   );
 }
 
-export function getPatientMonthlyReport(patientId: string): Promise<PeriodReport> {
-  return apiFetch<PeriodReport>(`${patientPath(patientId)}/reports/monthly`);
+export function getPatientMonthlyReport(
+  patientId: string,
+  date?: string,
+): Promise<PeriodReport> {
+  const query = date ? `?date=${encodeURIComponent(date)}` : '';
+  return apiFetch<PeriodReport>(`${patientPath(patientId)}/reports/monthly${query}`);
 }
 
 export function submitPatientReportJob(

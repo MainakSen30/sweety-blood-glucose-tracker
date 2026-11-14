@@ -9,7 +9,11 @@ import {
   getMonthToDateReportCached,
   getPreviousMonthReportCached,
 } from '../reports/reports.cache.js';
-import { reportDateQuerySchema, reportJobSubmitSchema } from '../reports/reports.validation.js';
+import {
+  monthlyReportDateQuerySchema,
+  reportDateQuerySchema,
+  reportJobSubmitSchema,
+} from '../reports/reports.validation.js';
 import { requireAuthorizedPatientId } from '../access/access.middleware.js';
 import {
   createDoctorInvitation,
@@ -132,7 +136,17 @@ export async function monthToDateReport(request: Request, response: Response): P
 export async function monthlyReport(request: Request, response: Response): Promise<Response> {
   const patientId = requireAuthorizedPatientId(request);
   const doctorId = requireDoctorId(request);
-  const report = await getPreviousMonthReportCached(patientId, doctorId);
+  const parsed = monthlyReportDateQuerySchema.safeParse(request.query);
+
+  if (!parsed.success) {
+    return response.status(400).json({
+      status: 'error',
+      message: 'Validation failed',
+      details: formatValidationIssues(parsed.error),
+    });
+  }
+
+  const report = await getPreviousMonthReportCached(patientId, parsed.data.date, doctorId);
   return response.status(200).json(report);
 }
 

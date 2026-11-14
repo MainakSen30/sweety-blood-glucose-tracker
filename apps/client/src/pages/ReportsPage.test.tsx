@@ -199,6 +199,42 @@ describe('ReportsPage charts', () => {
     expect(within(trend).getByText('31 Oct')).toBeInTheDocument();
   });
 
+  it('updates the previous-month report when a historical date is selected', async () => {
+    const user = userEvent.setup();
+    const HISTORICAL_MONTHLY_REPORT: PeriodReport = {
+      reportType: 'monthly',
+      period: { startDate: '01-09-2026', endDate: '30-09-2026' },
+      summary: { highest: 150, lowest: 90, average: 120, totalReadings: 2 },
+    };
+    vi.mocked(reportsApi.getMonthlyReport).mockImplementation(async (date) =>
+      date === '15-10-2026' ? HISTORICAL_MONTHLY_REPORT : MONTHLY_REPORT,
+    );
+    vi.mocked(readingsApi.listAllReadings).mockResolvedValue(MONTHLY_READINGS);
+
+    render(<ReportsPage />);
+    await screen.findByRole('heading', { name: '12 November 2026', level: 2 });
+
+    await user.click(screen.getByRole('tab', { name: 'Previous month' }));
+    expect(
+      await screen.findByRole('heading', { name: '1–31 October 2026', level: 2 }),
+    ).toBeInTheDocument();
+    expect(reportsApi.getMonthlyReport).toHaveBeenLastCalledWith(todayApiDate());
+
+    // Change date in date picker on the monthly report tab to 2026-10-15
+    fireEvent.change(screen.getByLabelText('Report date'), {
+      target: { value: '2026-10-15' },
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: '1–30 September 2026', level: 2 }),
+    ).toBeInTheDocument();
+    expect(reportsApi.getMonthlyReport).toHaveBeenLastCalledWith('15-10-2026');
+    expect(readingsApi.listAllReadings).toHaveBeenLastCalledWith({
+      from: '01-09-2026',
+      to: '30-09-2026',
+    });
+  });
+
   it('shows the empty state and no charts when the period has no readings', async () => {
     const user = userEvent.setup();
     vi.mocked(reportsApi.getMonthToDateReport).mockResolvedValue(EMPTY_REPORT);

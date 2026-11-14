@@ -526,4 +526,108 @@ describe('GET /api/reports/monthly', () => {
       totalReadings: 1,
     });
   });
+
+  it('calculates the previous calendar month relative to the supplied date query parameter', async () => {
+    const cookie = await registerTestUser('report-ref-date@example.com');
+    // Reference date: 15-10-2026 (October 2026) -> Previous month: September 2026 (01-09-2026 to 30-09-2026)
+    await seedReading(cookie, '01-09-2026', 'morning', 110);
+    await seedReading(cookie, '30-09-2026', 'after_dinner', 170);
+    // Boundary checks: August 31 and October 1 must be excluded
+    await seedReading(cookie, '31-08-2026', 'morning', 300);
+    await seedReading(cookie, '01-10-2026', 'morning', 400);
+
+    const response = await request(app)
+      .get('/api/reports/monthly')
+      .set('Cookie', cookie)
+      .query({ date: '15-10-2026' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      reportType: 'monthly',
+      period: {
+        startDate: '01-09-2026',
+        endDate: '30-09-2026',
+      },
+      summary: { highest: 170, lowest: 110, average: 140, totalReadings: 2 },
+    });
+  });
+
+  it('handles year transition when reference date is in January', async () => {
+    const cookie = await registerTestUser('report-year-wrap@example.com');
+    // Reference date: 10-01-2026 -> Previous month: December 2025 (01-12-2025 to 31-12-2025)
+    await seedReading(cookie, '15-12-2025', 'after_lunch', 135);
+
+    const response = await request(app)
+      .get('/api/reports/monthly')
+      .set('Cookie', cookie)
+      .query({ date: '10-01-2026' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.period).toEqual({
+      startDate: '01-12-2025',
+      endDate: '31-12-2025',
+    });
+    expect(response.body.summary.totalReadings).toBe(1);
+    expect(response.body.summary.average).toBe(135);
+  });
+
+  it('handles leap years correctly for February 29', async () => {
+    const cookie = await registerTestUser('report-leap-year@example.com');
+    // Reference date: 05-03-2024 -> Previous month: February 2024 (01-02-2024 to 29-02-2024)
+    await seedReading(cookie, '29-02-2024', 'morning', 105);
+
+    const response = await request(app)
+      .get('/api/reports/monthly')
+      .set('Cookie', cookie)
+      .query({ date: '05-03-2024' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.period).toEqual({
+      startDate: '01-02-2024',
+      endDate: '29-02-2024',
+    });
+    expect(response.body.summary.totalReadings).toBe(1);
+  });
+
+  it('rejects malformed date parameter with standard validation error format', async () => {
+    const cookie = await registerTestUser('report-invalid-date@example.com');
+
+    const response = await request(app)
+      .get('/api/reports/monthly')
+      .set('Cookie', cookie)
+      .query({ date: 'not-a-date' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details).toEqual([
+      { path: 'date', message: 'Please enter a valid date in DD-MM-YYYY format.' },
+    ]);
+  });
+
+  it('rejects an impossible calendar date with standard validation error format', async () => {
+    const cookie = await registerTestUser('report-impossible-date@example.com');
+
+    const response = await request(app)
+      .get('/api/reports/monthly')
+      .set('Cookie', cookie)
+      .query({ date: '31-02-2026' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details).toEqual([
+      { path: 'date', message: 'Please enter a valid date in DD-MM-YYYY format.' },
+    ]);
+  });
+
+  it('rejects future reference date preserving the future-date validation policy', async () => {
+    const cookie = await registerTestUser('report-future-date@example.com');
+
+    const response = await request(app)
+      .get('/api/reports/monthly')
+      .set('Cookie', cookie)
+      .query({ date: toDDMMYYYY(tomorrowInAppTimezone()) });
+
+    expect(response.status).toBe(400);
+    expect(response.body.details).toEqual([
+      { path: 'date', message: 'Date cannot be in the future.' },
+    ]);
+  });
 });

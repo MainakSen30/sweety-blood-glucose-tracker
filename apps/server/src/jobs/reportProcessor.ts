@@ -62,7 +62,11 @@ export async function processReportJob(job: ReportJobLike): Promise<AsyncReportR
       ? await getDailyReportCached(payload.userId, payload.date!, payload.requestedBy)
       : payload.reportType === 'month-to-date'
         ? await getMonthToDateReportCached(payload.userId, payload.date!, payload.requestedBy)
-        : await getPreviousMonthReportCached(payload.userId, payload.requestedBy);
+        : await getPreviousMonthReportCached(
+            payload.userId,
+            payload.date ?? undefined,
+            payload.requestedBy,
+          );
 
   console.log(
     `[report-worker] report generated in ${Date.now() - startedAt}ms (${payload.reportType}).`,

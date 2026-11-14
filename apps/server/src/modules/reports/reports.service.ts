@@ -85,8 +85,11 @@ export async function getMonthToDateReport(userId: string, isoDate: string): Pro
   };
 }
 
-export async function getPreviousMonthReport(userId: string): Promise<PeriodReport> {
-  const period = previousMonthRange(todayInAppTimezone());
+export async function getPreviousMonthReport(
+  userId: string,
+  referenceIsoDate: string = todayInAppTimezone(),
+): Promise<PeriodReport> {
+  const period = previousMonthRange(referenceIsoDate);
   const aggregate = await aggregateUserReadings(userId, period.startDate, period.endDate);
 
   return {
