@@ -36,6 +36,9 @@ export default function App() {
 
         <Route element={<RequireAuth />}>
           <Route element={<RequireRole role="patient" />}>
+            {/* The patient home is /today; this alias keeps /patient/dashboard working. */}
+            <Route path="patient/dashboard" element={<Navigate to="/today" replace />} />
+
             <Route element={<PatientLayout />}>
               <Route path="today" element={<DashboardPage />} />
               <Route path="readings" element={<ReadingsPage />} />

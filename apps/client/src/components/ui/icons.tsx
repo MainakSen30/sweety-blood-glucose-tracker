@@ -83,6 +83,25 @@ export function UsersIcon({ className }: IconProps) {
   );
 }
 
+export function PersonIcon({ className }: IconProps) {
+  return (
+    <svg {...svgProps(className)}>
+      <circle cx="8" cy="5" r="2.6" />
+      <path d="M3 13.2c.6-2.3 2.6-3.9 5-3.9s4.4 1.6 5 3.9" />
+    </svg>
+  );
+}
+
+export function StethoscopeIcon({ className }: IconProps) {
+  return (
+    <svg {...svgProps(className)}>
+      <path d="M4.5 2.2v3.3a3.5 3.5 0 0 0 7 0V2.2" />
+      <path d="M8 9v1.6a2.4 2.4 0 0 0 2.4 2.4h.6" />
+      <circle cx="12.4" cy="13" r="1.4" />
+    </svg>
+  );
+}
+
 export function MailIcon({ className }: IconProps) {
   return (
     <svg {...svgProps(className)}>

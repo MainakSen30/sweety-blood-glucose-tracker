@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { getCurrentUser, loginUser, logoutUser, registerUser } from '../services/authApi.js';
+import { SESSION_EXPIRED_EVENT } from '../services/http.js';
 import {
   roleHomePath,
   type LoginInput,
@@ -9,7 +10,13 @@ import {
   type UserRole,
 } from '../types/user.js';
 import { Spinner } from '../components/ui/Button.js';
-import { AuthContext, useAuth, type AuthContextValue, type AuthStatus } from './auth.js';
+import {
+  AuthContext,
+  RoleMismatchError,
+  useAuth,
+  type AuthContextValue,
+  type AuthStatus,
+} from './auth.js';
 
 /**
  * Session state for the cookie-based backend. The cookie is the session —
@@ -39,11 +46,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Any authenticated API call can discover an expired cookie. Reset the
+  // session so RequireAuth sends the user to /login on the next render.
+  useEffect(() => {
+    const expire = () => {
+      setUser(null);
+      setStatus('unauthenticated');
+    };
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, expire);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expire);
+  }, []);
+
   const value: AuthContextValue = {
     user,
     status,
-    login: async (input: LoginInput) => {
+    login: async (input: LoginInput, expectedRole: UserRole) => {
       const nextUser = await loginUser(input);
+
+      if (nextUser.role !== expectedRole) {
+        // The login call already set the cookie. Revoke it before reporting the
+        // mismatch so the visitor is never half-signed-in as the other role.
+        await logoutUser().catch(() => undefined);
+        throw new RoleMismatchError(nextUser.role);
+      }
+
       setUser(nextUser);
       setStatus('authenticated');
       return nextUser;

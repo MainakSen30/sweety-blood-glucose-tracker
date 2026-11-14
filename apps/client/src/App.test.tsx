@@ -1,5 +1,5 @@
 import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import * as authApi from './services/authApi';
@@ -164,6 +164,26 @@ describe('App routing', () => {
     expect(
       screen.getByText('Only patients with an active, patient-accepted assignment appear here.'),
     ).toBeInTheDocument();
+  });
+
+  it('serves /patient/dashboard as an alias for the patient home', async () => {
+    vi.mocked(authApi.getCurrentUser).mockResolvedValue(PATIENT);
+
+    function LocationProbe() {
+      return <p data-testid="path">{useLocation().pathname}</p>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/patient/dashboard']}>
+        <App />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('path')).toHaveTextContent('/today');
+    });
+    expect(screen.getByRole('link', { name: 'Care team' })).toBeInTheDocument();
   });
 
   it('shows no login form while the session is still loading', async () => {
