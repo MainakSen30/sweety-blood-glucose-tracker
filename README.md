@@ -4,11 +4,11 @@ SWEETy is a full-stack web application that lets a person with diabetes record u
 glucose readings per day across four named time slots, and review daily, month-to-date, and
 previous-month reports with summary statistics.
 
-This repository covers **Phase 0 through Phase 12**: monorepo foundation, authentication,
+This repository covers **Phase 0 through Phase 13**: monorepo foundation, authentication,
 readings CRUD, report generation, React frontend, testing and hardening, submission
 preparation, paginated readings history, advanced reports and data visualization, Docker
-reviewer readiness, reading-form test coverage, Redis-backed report caching, and BullMQ
-background jobs.
+reviewer readiness, reading-form test coverage, Redis-backed report caching, BullMQ
+background jobs, and patient-consented doctor access.
 
 ---
 
@@ -25,6 +25,7 @@ background jobs.
 - [Local installation](#local-installation)
 - [Database setup](#database-setup)
 - [Seed data](#seed-data)
+- [Patient and Doctor Roles](#patient-and-doctor-roles)
 - [Running the application](#running-the-application)
 - [API documentation](#api-documentation)
 - [Report caching (Redis)](#report-caching-redis)
@@ -44,8 +45,10 @@ logbook or a generic spreadsheet. A user logs in, records readings at up to four
 the day (morning fasting, after breakfast, after lunch, after dinner), and can review statistics
 for any single day, the current month up to today, or the full previous calendar month.
 
-The application is designed for personal, single-user use (one account per person). Doctor roles,
-shared access, reminders, and notifications are intentionally out of scope for this release.
+Each patient owns their data. A patient may additionally grant a provisioned doctor read-only
+access to their readings and reports. Doctors never create or edit readings, and access starts
+only after the patient accepts an invitation and can be revoked at any time. Reminders and
+notifications remain out of scope.
 
 Main user workflows:
 
@@ -56,7 +59,10 @@ Main user workflows:
 4. **Browse history** — paginate through all past readings, optionally filtered by date.
 5. **Open reports** — daily detail with a bar chart, or aggregate summaries for the month.
 6. **Edit or delete** any of your own readings.
-7. **Log out** — the session cookie is cleared server-side.
+7. **Manage a care team** — accept a doctor's invitation token, reject it, or revoke access.
+8. **Log out** — the session cookie is cleared server-side.
+
+Doctors sign in to a separate, read-only view of the patients who consented to them.
 
 ---
 
@@ -112,9 +118,20 @@ Main user workflows:
 - Motion animations (page entrance, dialog open/close, tab crossfade) with `prefers-reduced-motion`
   support
 
+### Patient and doctor roles
+
+- Two roles: `patient` (default, the only self-registerable role) and `doctor`
+- Doctors are provisioned only through a guarded, audited CLI — there is no promotion endpoint
+- Many-to-many assignments with patient-controlled accept, reject, and revoke
+- Invitation tokens are CSPRNG-generated, stored hashed, expire after seven days, and are
+  single-use; the raw token is shown to the doctor once and never logged
+- Doctors receive read-only access to assigned patients' readings and reports; inaccessible or
+  revoked patients return `404`
+- Separate role-aware navigation, routes, and home pages in the client
+
 ### Testing
 
-- 329 passing tests across 22 test files (see CI output for current results)
+- 401 passing tests across 28 test files (see CI output for current results)
 - Server integration tests using Supertest against a real PostgreSQL test database
 - Client unit tests with Vitest and React Testing Library
 - TypeScript strict mode — zero type errors
@@ -365,10 +382,10 @@ docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx
 The script is idempotent and safe to re-run; it never deletes or truncates existing data. Demo
 credentials (confirmed against the seed script):
 
-| Field    | Value               |
-| -------- | ------------------- |
-| Email    | `demo@sweety.local` |
-| Password | `Demo1234!`         |
+| Role    | Email                 | Password      |
+| ------- | --------------------- | ------------- |
+| Patient | `demo@sweety.local`   | `Demo1234!`   |
+| Doctor  | `doctor@sweety.local` | `Doctor1234!` |
 
 Details and safety restrictions: [Seed data](#seed-data).
 
@@ -548,14 +565,19 @@ docker compose exec server sh -c "SEED_DEMO_DATA=true /app/node_modules/.bin/tsx
 
 ### Demo credentials
 
-| Field    | Value               |
-| -------- | ------------------- |
-| Email    | `demo@sweety.local` |
-| Password | `Demo1234!`         |
+| Role    | Email                 | Password      |
+| ------- | --------------------- | ------------- |
+| Patient | `demo@sweety.local`   | `Demo1234!`   |
+| Doctor  | `doctor@sweety.local` | `Doctor1234!` |
+
+The doctor account is pre-assigned to the demo patient with an active assignment so both role
+views can be evaluated immediately. Doctor access is read-only.
 
 ### What the seed creates
 
-- One user account with the demo credentials above.
+- One patient account and one doctor account with the demo credentials above.
+- An active doctor–patient assignment for the demo pair. A pre-existing assignment is never
+  reactivated, so a revoked demo relationship stays revoked.
 - Readings for T-1 through T-30 (relative to today in Asia/Kolkata), covering:
   - Fully completed days (all 4 slots)
   - Partially completed days (1–3 slots)
@@ -810,30 +832,31 @@ docker compose up -d worker       # Resume worker processing
 
 ### Root scripts
 
-| Command                      | Description                                      |
-| ---------------------------- | ------------------------------------------------ |
-| `npm run dev`                | Start API and client concurrently                |
-| `npm run dev:client`         | Start only the Vite dev server                   |
-| `npm run dev:server`         | Start only the Express API in watch mode         |
-| `npm run dev:worker`         | Start only the BullMQ worker in watch mode       |
-| `npm run build`              | Build both workspaces                            |
-| `npm test`                   | Run all test suites once                         |
-| `npm run test:watch`         | Run test suites in watch mode                    |
-| `npm run typecheck`          | TypeScript check in both workspaces              |
-| `npm run lint`               | ESLint over the repository                       |
-| `npm run lint:fix`           | ESLint with auto-fix                             |
-| `npm run format`             | Prettier write                                   |
-| `npm run format:check`       | Prettier check without writing                   |
-| `npm run db:generate`        | Generate a Drizzle migration from schema changes |
-| `npm run db:migrate`         | Apply pending Drizzle migrations                 |
-| `npm run db:push`            | Push schema to DB directly (development only)    |
-| `npm run db:studio`          | Open Drizzle Studio                              |
-| `npm run db:seed`            | Seed demo account and synthetic readings         |
-| `npm run docker:up`          | Build and start the full Compose stack           |
-| `npm run docker:up:detached` | Build and start in background                    |
-| `npm run docker:down`        | Stop containers (data volume preserved)          |
-| `npm run docker:logs`        | Follow Compose service logs                      |
-| `npm run docker:ps`          | Show Compose service status                      |
+| Command                                                                           | Description                                      |
+| --------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `npm run dev`                                                                     | Start API and client concurrently                |
+| `npm run dev:client`                                                              | Start only the Vite dev server                   |
+| `npm run dev:server`                                                              | Start only the Express API in watch mode         |
+| `npm run dev:worker`                                                              | Start only the BullMQ worker in watch mode       |
+| `npm run build`                                                                   | Build both workspaces                            |
+| `npm test`                                                                        | Run all test suites once                         |
+| `npm run test:watch`                                                              | Run test suites in watch mode                    |
+| `npm run typecheck`                                                               | TypeScript check in both workspaces              |
+| `npm run lint`                                                                    | ESLint over the repository                       |
+| `npm run lint:fix`                                                                | ESLint with auto-fix                             |
+| `npm run format`                                                                  | Prettier write                                   |
+| `npm run format:check`                                                            | Prettier check without writing                   |
+| `npm run db:generate`                                                             | Generate a Drizzle migration from schema changes |
+| `npm run db:migrate`                                                              | Apply pending Drizzle migrations                 |
+| `npm run db:push`                                                                 | Push schema to DB directly (development only)    |
+| `npm run db:studio`                                                               | Open Drizzle Studio                              |
+| `npm run db:seed`                                                                 | Seed demo accounts and synthetic readings        |
+| `npm run db:promote-doctor --workspace @sweety/server -- <email> --by="Operator"` | Promote an existing user to doctor (audited)     |
+| `npm run docker:up`                                                               | Build and start the full Compose stack           |
+| `npm run docker:up:detached`                                                      | Build and start in background                    |
+| `npm run docker:down`                                                             | Stop containers (data volume preserved)          |
+| `npm run docker:logs`                                                             | Follow Compose service logs                      |
+| `npm run docker:ps`                                                               | Show Compose service status                      |
 
 ---
 
@@ -890,10 +913,13 @@ Response `200`:
   "id": "6f1c2b52-9f2f-4f1e-9f9a-1a2b3c4d5e6f",
   "name": "Demo User",
   "email": "demo@example.com",
+  "role": "patient",
   "createdAt": "2026-11-12T00:00:00.000Z",
   "updatedAt": "2026-11-12T00:00:00.000Z"
 }
 ```
+
+Registration always creates a `patient`; any `role` field in the request body is ignored.
 
 Errors: `400` for validation failures (name required, valid email, password ≥ 8 characters);
 `409` when the email is already registered.
@@ -1113,6 +1139,103 @@ observations. Slots are counted client-side from the same readings the trend lin
 
 ---
 
+## Patient and Doctor Roles
+
+SWEETy has two application roles:
+
+| Role      | Self-registerable | Can record/edit readings | Data access                                             |
+| --------- | ----------------- | ------------------------ | ------------------------------------------------------- |
+| `patient` | Yes (default)     | Yes, own data only       | Own readings and reports, plus their care team          |
+| `doctor`  | No                | No                       | Read-only for patients with an active, accepted consent |
+
+### Provisioning a doctor
+
+Public registration always creates a `patient`; any `role` in the request body is ignored. A
+doctor account is the same account promoted by a trusted operator with database access:
+
+```bash
+npm run db:promote-doctor --workspace @sweety/server -- doctor@example.com --by="Ops Name"
+```
+
+The CLI:
+
+- requires an operator name (`--by`) and writes a row to `user_role_changes` (previous role, new
+  role, operator, timestamp);
+- refuses to run with `NODE_ENV=test`, without `DATABASE_URL`, against a database whose name ends
+  in `_test` or `-test`, or when `DATABASE_URL` and `TEST_DATABASE_URL` are identical;
+- is idempotent — promoting an existing doctor reports that no change was made.
+
+There is deliberately no HTTP endpoint for role escalation.
+
+### Consent lifecycle
+
+1. The doctor enters the email of an existing patient. The server creates an assignment with a
+   status of `pending` and a 32-byte CSPRNG token. Only the SHA-256 hash is stored; the raw token
+   is returned once in the API response, never logged.
+2. The doctor delivers the token to the patient out of band (there is no email integration).
+3. The patient pastes the token into **Care team** (`POST /api/patient/invitations/accept`). The
+   assignment becomes `active`, or the patient can reject it.
+4. While active, the doctor can read that patient's readings and reports. Revoking
+   (`DELETE /api/patient/doctors/:assignmentId`) immediately blocks further reads, queued report
+   jobs, and cached results.
+
+Invitations expire after seven days. Pending and active pairs are protected by partial unique
+indexes, and tokens are single-use.
+
+### Role-aware API
+
+Patient consent endpoints (`/api/patient/*`, patient role only):
+
+| Method   | Endpoint                                        | Description                          |
+| -------- | ----------------------------------------------- | ------------------------------------ |
+| `GET`    | `/api/patient/doctors`                          | Active doctors + pending invitations |
+| `POST`   | `/api/patient/invitations/accept`               | Accept an invitation by token        |
+| `POST`   | `/api/patient/invitations/:assignmentId/reject` | Reject a pending invitation          |
+| `DELETE` | `/api/patient/doctors/:assignmentId`            | Revoke an active doctor              |
+
+Doctor endpoints (`/api/doctor/*`, doctor role only):
+
+| Method | Endpoint                                                     | Description                  |
+| ------ | ------------------------------------------------------------ | ---------------------------- |
+| `GET`  | `/api/doctor/patients`                                       | Patients with active consent |
+| `GET`  | `/api/doctor/invitations`                                    | Invitation history           |
+| `POST` | `/api/doctor/invitations`                                    | Invite a patient by email    |
+| `GET`  | `/api/doctor/patients/:patientId/readings`                   | Paginated patient readings   |
+| `GET`  | `/api/doctor/patients/:patientId/readings/:readingId`        | One patient reading          |
+| `GET`  | `/api/doctor/patients/:patientId/reports/daily`              | Daily report                 |
+| `GET`  | `/api/doctor/patients/:patientId/reports/month-to-date`      | Month-to-date report         |
+| `GET`  | `/api/doctor/patients/:patientId/reports/monthly`            | Previous-month report        |
+| `POST` | `/api/doctor/patients/:patientId/reports/jobs`               | Queue a background report    |
+| `GET`  | `/api/doctor/patients/:patientId/reports/jobs/:jobId`        | Job status                   |
+| `GET`  | `/api/doctor/patients/:patientId/reports/jobs/:jobId/result` | Job result                   |
+
+Every `/patients/:patientId/*` request runs `requireActivePatientAssignment` before the handler.
+A patient who is not actively assigned — including a revoked or foreign patient — returns `404`,
+never `403`, so the API does not confirm that a patient exists.
+
+`/api/readings` and the self-service `/api/reports/*` endpoints are restricted to the `patient`
+role. Doctors use the patient-scoped routes above and cannot create, edit, or delete readings.
+
+### Cache and background-job isolation
+
+- Report cache keys include both the requester and the data owner
+  (`sweety:v2:reports:r{requester}:u{owner}:v{ownerVersion}:{type}:{period}`), so a doctor's view
+  can never be served from the patient's cache entry or another doctor's entry.
+- Authorization runs before any cache read. Revocation and reading mutations bump the owner's
+  version, so stale authorized views are invalidated.
+- Report jobs record both the requesting user and the patient. Job IDs are scoped by both, and the
+  worker re-checks the assignment before generating; status and result retrieval re-check it
+  again, so a revoked doctor cannot collect a result.
+
+### Known role limitations
+
+- Invitation tokens have no email delivery path; the doctor must share the token manually.
+- A promotion CLI run is not reversible from the UI; demotion requires direct database access.
+- There is no doctor-side write access, messaging, appointment scheduling, or audit of which
+  patient records a doctor viewed.
+
+---
+
 ## Testing
 
 ### Run the test suite
@@ -1162,7 +1285,11 @@ runs, so the test schema always matches the repository.
 - Client report charts: trend points from real API data, same-day observations preserved, no trend
   line for a single reading, donut counts/percentages, tab and date changes, empty/loading/error
   states, and the existing daily-average bar chart
-- Client routing and redirects
+- Patient/doctor roles: registration stays patient-only, guarded doctor promotion with audit
+  records, invitation token lifecycle, patient accept/reject/revoke, doctor read access,
+  revocation blocking reads and job results, cache separation between requester views, and
+  role-aware client routing
+- Client routing and redirects, including role-aware home pages and route guards
 - Client date conversion utilities
 - Client readings pagination (controls, page changes, loading/error states, page-size reset,
   mutation refresh, empty-page fallback)
@@ -1185,6 +1312,13 @@ Test counts: see CI output for current results.
   be a UUID
 - **Ownership enforcement** — every read/update/delete filters by both record ID and user ID; a
   foreign record returns `404`, not `403`, to avoid confirming existence
+- **Server-side role enforcement** — middleware re-reads the user's role from PostgreSQL on every
+  request; patient and doctor route groups are guarded separately, and doctor access to a patient
+  is re-checked from the assignment table per request (never trusted from the URL or JWT)
+- **Hashed, expiring invitation tokens** — CSPRNG-generated, stored as SHA-256 hashes, single-use,
+  seven-day expiry, and never written to logs
+- **No public role escalation** — registration always creates a patient; doctor promotion is an
+  audited operator CLI action
 - **Rate limiting** — registration and login endpoints limited to 20 requests per 15 minutes per IP
 - **Helmet** — sets standard security HTTP response headers
 - **CORS** — restricted to `CLIENT_URL`; `credentials: true`
@@ -1226,7 +1360,13 @@ Test counts: see CI output for current results.
   percentage in text, so colour is not the only carrier of information.
 - The `GET /api/health` endpoint returns `200` after a successful database connection check at
   startup; it does not query the database on every request.
-- Doctor roles, reminders, notifications, and exports are intentionally out of scope.
+- Reminders, notifications, messaging, appointment scheduling, and exports are intentionally out
+  of scope.
+- Doctor invitations are delivered out of band: the API returns the raw token once, and a doctor
+  must share it with the patient through a trusted channel. No email service is integrated.
+- Doctor access is read-only. Doctors cannot create, edit, or delete readings, and there is no
+  doctor-facing write path.
+- Role demotion is not exposed in the UI or API; it requires direct database access.
 
 ---
 
@@ -1359,6 +1499,15 @@ progress reporting, exponential retry backoff, bounded Redis retention for sensi
 strict user ownership verification, and graceful worker shutdown. Docker Compose was expanded with
 the `worker` service, and the React frontend was enhanced with background report triggering and
 live polling.
+
+### Phase 13 — Patient and doctor roles
+
+Added `patient` and `doctor` roles with strict server-side RBAC. Public registration remains
+patient-only; doctors are provisioned through a guarded, audited CLI. Patients grant read-only
+access through hashed, expiring, single-use invitation tokens and can reject or revoke at any
+time. Doctor routes re-check the active assignment on every request, and the report cache and
+BullMQ jobs are scoped by requester and patient so revocation blocks both reads and results. The
+client gained role-aware navigation, a patient Care team page, and a read-only doctor patient view.
 
 ---
 
