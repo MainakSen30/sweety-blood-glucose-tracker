@@ -62,8 +62,10 @@ describe('App routing', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('heading', { name: /Track your glucose/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Create account' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /Better glucose tracking/ }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Get started' }).length).toBeGreaterThan(0);
   });
 
   it('redirects unauthenticated visitors from the app to the login page', async () => {
@@ -106,7 +108,9 @@ describe('App routing', () => {
     );
 
     expect(await screen.findByRole('link', { name: 'Readings' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /Track your glucose/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /Better glucose tracking/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('sends a doctor to the doctor dashboard after login', async () => {
